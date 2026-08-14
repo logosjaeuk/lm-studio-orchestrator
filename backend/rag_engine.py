@@ -1,136 +1,132 @@
 import os
+import json
 import math
 import re
 from typing import List, Dict, Any
 
-class SimpleRAGEngine:
+class RAGEngine:
     def __init__(self, storage_dir: str = "./knowledge_base"):
         self.storage_dir = storage_dir
         os.makedirs(self.storage_dir, exist_ok=True)
-        self.documents: List[Dict[str, Any]] = [] # [{id, filename, chunk_text, words}]
-        self.load_existing_docs()
+        self.doc_chunks: List[Dict[str, Any]] = []
+        self.db_file = os.path.join(self.storage_dir, "rag_documents.json")
+        self.load_from_disk()
 
-    def load_existing_docs(self):
-        """저장소 내의 기존 문서들 로드"""
-        if not os.path.exists(self.storage_dir):
-            return
-        for fname in os.listdir(self.storage_dir):
-            fpath = os.path.join(self.storage_dir, fname)
-            if os.path.isfile(fpath):
-                try:
-                    with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
-                        text = f.read()
-                        self.add_document_text(fname, text, save_disk=False)
-                except Exception as e:
-                    print(f"Error loading {fname}: {e}")
+    def _tokenize(self, text: str) -> List[str]:
+        cleaned = re.sub(r'[^\w\s]', ' ', text.lower())
+        words = cleaned.split()
+        # 단어 + 2-gram 시맨틱 토큰 생성
+        bigrams = [f"{words[i]}_{words[i+1]}" for i in range(len(words)-1)] if len(words) > 1 else []
+        return words + bigrams
 
-    def add_document_text(self, filename: str, content: str, save_disk: bool = True) -> int:
-        """문서를 청크로 분할하여 인덱스에 추가"""
-        if save_disk:
-            fpath = os.path.join(self.storage_dir, filename)
-            with open(fpath, "w", encoding="utf-8") as f:
-                f.write(content)
+    def _build_semantic_vector(self, tokens: List[str]) -> Dict[str, float]:
+        tf = {}
+        for t in tokens:
+            tf[t] = tf.get(t, 0) + 1
+        # L2 정규화
+        norm = math.sqrt(sum(v * v for v in tf.values()))
+        if norm > 0:
+            for k in tf:
+                tf[k] /= norm
+        return tf
 
-        chunks = self.chunk_text(content, chunk_size=400, overlap=50)
-        for idx, chunk in enumerate(chunks):
-            words = set(re.findall(r'\w+', chunk.lower()))
-            self.documents.append({
-                "id": f"{filename}_{idx}",
-                "filename": filename,
-                "chunk_index": idx,
-                "text": chunk,
-                "words": words
-            })
-        return len(chunks)
+    def _cosine_similarity(self, vec_a: Dict[str, float], vec_b: Dict[str, float]) -> float:
+        score = 0.0
+        for term, val in vec_a.items():
+            if term in vec_b:
+                score += val * vec_b[term]
+        return score
 
-    def chunk_text(self, text: str, chunk_size: int = 400, overlap: int = 50) -> List[str]:
-        """지능형 텍스트 청킹"""
+    def add_document_text(self, filename: str, text: str, chunk_size: int = 400, chunk_overlap: int = 50, save_disk: bool = True) -> int:
         paragraphs = text.split("\n\n")
         chunks = []
-        current_chunk = ""
+        curr_chunk = ""
 
         for p in paragraphs:
             p = p.strip()
             if not p:
                 continue
-            if len(current_chunk) + len(p) <= chunk_size:
-                current_chunk += ("\n\n" if current_chunk else "") + p
+            if len(curr_chunk) + len(p) <= chunk_size:
+                curr_chunk += ("\n\n" if curr_chunk else "") + p
             else:
-                if current_chunk:
-                    chunks.append(current_chunk)
-                current_chunk = p[-overlap:] + "\n" + p if len(p) > chunk_size else p
+                if curr_chunk:
+                    chunks.append(curr_chunk)
+                curr_chunk = p
 
-        if current_chunk:
-            chunks.append(current_chunk)
-        return chunks if chunks else [text]
+        if curr_chunk:
+            chunks.append(curr_chunk)
+
+        added = 0
+        for i, c in enumerate(chunks):
+            tokens = self._tokenize(c)
+            vector = self._build_semantic_vector(tokens)
+            self.doc_chunks.append({
+                "id": f"{filename}_chunk_{i+1}",
+                "filename": filename,
+                "chunk_index": i + 1,
+                "text": c,
+                "vector": vector
+            })
+            added += 1
+
+        if save_disk:
+            self.save_to_disk()
+
+        return added
 
     def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """TF-IDF / BM25 유사도 검색"""
-        if not self.documents:
-            return []
-
-        query_words = set(re.findall(r'\w+', query.lower()))
-        if not query_words:
-            return []
+        q_tokens = self._tokenize(query)
+        q_vec = self._build_semantic_vector(q_tokens)
 
         scored = []
-        doc_count = len(self.documents)
-
-        for doc in self.documents:
-            doc_words = doc["words"]
-            intersection = query_words.intersection(doc_words)
-            if not intersection:
-                continue
-
-            score = 0.0
-            for w in intersection:
-                # IDF 근사
-                df = sum(1 for d in self.documents if w in d["words"])
-                idf = math.log((doc_count + 1) / (df + 1)) + 1
-                score += idf
-
-            score = score / (math.sqrt(len(doc_words)) + 1e-5)
-            scored.append((score, doc))
-
-        scored.sort(key=lambda x: x[0], reverse=True)
-        results = []
-        for score, doc in scored[:top_k]:
-            results.append({
+        for doc in self.doc_chunks:
+            sim = self._cosine_similarity(q_vec, doc["vector"])
+            scored.append({
                 "id": doc["id"],
                 "filename": doc["filename"],
-                "chunk_index": doc["chunk_index"],
                 "text": doc["text"],
-                "score": round(score, 4)
+                "score": round(sim, 4),
+                "similarity_pct": round(sim * 100, 1)
             })
-        return results
+
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:top_k]
 
     def get_augmented_context(self, query: str, top_k: int = 3) -> str:
-        """프롬프트 주입용 RAG 컨텍스트 생성"""
-        results = self.search(query, top_k)
-        if not results:
+        results = self.search(query, top_k=top_k)
+        if not results or results[0]["score"] == 0:
             return ""
 
-        context_str = "### [참조 문서 지식베이스 (RAG Context)]\n"
-        for idx, r in enumerate(results, 1):
-            context_str += f"[{idx}] 파일: {r['filename']} (관련도: {r['score']})\n{r['text']}\n---\n"
-        return context_str
+        context_blocks = []
+        for r in results:
+            if r["score"] > 0:
+                context_blocks.append(f"[{r['filename']} (유사도 {r['similarity_pct']}%)]:\n{r['text']}")
+
+        return "### [참조된 RAG 로컬 지식베이스 문서]:\n" + "\n---\n".join(context_blocks)
+
+    def save_to_disk(self):
+        with open(self.db_file, "w", encoding="utf-8") as f:
+            json.dump(self.doc_chunks, f, ensure_ascii=False, indent=2)
+
+    def load_from_disk(self):
+        if os.path.exists(self.db_file):
+            try:
+                with open(self.db_file, "r", encoding="utf-8") as f:
+                    self.doc_chunks = json.load(f)
+            except Exception:
+                self.doc_chunks = []
 
     def get_stats(self) -> Dict[str, Any]:
-        """지식베이스 통계"""
-        files = list(set(d["filename"] for d in self.documents))
+        files = set(d["filename"] for d in self.doc_chunks)
         return {
-            "total_chunks": len(self.documents),
+            "total_chunks": len(self.doc_chunks),
             "total_files": len(files),
-            "files": files
+            "files": list(files)
         }
 
     def clear_all(self):
-        """지식베이스 전체 초기화"""
-        self.documents = []
-        for fname in os.listdir(self.storage_dir):
-            try:
-                os.remove(os.path.join(self.storage_dir, fname))
-            except Exception:
-                pass
+        self.doc_chunks = []
+        if os.path.exists(self.db_file):
+            os.remove(self.db_file)
 
-rag_engine = SimpleRAGEngine()
+rag_engine = RAGEngine()

@@ -15,8 +15,10 @@ from .orchestrator import orchestrator_engine
 from .brain_memory import brain_engine
 from .code_sandbox import code_sandbox
 from .mcp_manager import mcp_manager
+from .provider_manager import provider_manager
+from .canvas_engine import canvas_engine
 
-app = FastAPI(title="LM Studio Orchestrator API", version="2.2.0")
+app = FastAPI(title="LM Studio Orchestrator API", version="3.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,6 +44,11 @@ class PipelineRequest(BaseModel):
     use_rag: bool = False
     model: str = "default"
     debate_rounds: Optional[int] = 2
+
+class CanvasRunRequest(BaseModel):
+    nodes: List[Dict[str, Any]]
+    connections: List[Dict[str, Any]] = []
+    initial_input: str = "프로젝트 분석 및 코드 작성"
 
 class PythonExecRequest(BaseModel):
     code: str
@@ -86,7 +93,18 @@ async def get_health():
     return await lm_client.check_health()
 
 # ==========================================
-# 1. 1:1 싱글 챗 플레이그라운드 API (Issue #1, #6)
+# 1. 멀티 LLM 프로바이더 API (Issue #11)
+# ==========================================
+@app.get("/api/providers")
+async def get_providers():
+    models = await provider_manager.get_all_models()
+    return {
+        "providers": provider_manager.providers,
+        "models": models
+    }
+
+# ==========================================
+# 2. 1:1 싱글 챗 플레이그라운드 API
 # ==========================================
 @app.get("/api/presets")
 async def get_presets():
@@ -144,37 +162,17 @@ async def single_chat_stream(req: SingleChatRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 2. MCP (Model Context Protocol) API (Issue #5, #7)
+# 3. 캔버스 실시간 파이프라인 실행 API (Issue #9)
 # ==========================================
-@app.get("/api/mcp/servers")
-async def get_mcp_servers():
-    return {"servers": mcp_manager.servers}
+@app.post("/api/canvas/run-pipeline")
+async def run_canvas_pipeline_stream(req: CanvasRunRequest):
+    async def event_generator():
+        async for ev in canvas_engine.execute_canvas_pipeline(req.nodes, req.connections, req.initial_input):
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
 
-@app.post("/api/mcp/servers")
-async def register_mcp_server(req: MCPRegisterRequest):
-    mcp_manager.servers[req.id] = {
-        "name": req.name,
-        "type": req.type,
-        "command": req.command,
-        "url": req.url,
-        "enabled": True,
-        "tools": req.tools or ["default_action"]
-    }
-    mcp_manager.save_servers()
-    return {"status": "success", "server": mcp_manager.servers[req.id]}
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.get("/api/mcp/tools")
-async def get_mcp_tools():
-    return {"tools": mcp_manager.get_all_tools()}
-
-@app.post("/api/mcp/execute")
-async def execute_mcp_tool(req: MCPExecuteRequest):
-    res = mcp_manager.execute_tool(req.tool, req.args)
-    return res
-
-# ==========================================
-# 3. 캔버스 도구 노드 & 워크플로우 API (Issue #4, #8)
-# ==========================================
 @app.post("/api/canvas/execute-python")
 async def execute_python(req: PythonExecRequest):
     return code_sandbox.execute_python(req.code)
@@ -205,7 +203,36 @@ async def list_canvas_workflows():
     return {}
 
 # ==========================================
-# 4. 3D 브레인 지식 그래프 & 자가 학습 API
+# 4. MCP (Model Context Protocol) API (Issue #10)
+# ==========================================
+@app.get("/api/mcp/servers")
+async def get_mcp_servers():
+    return {"servers": mcp_manager.servers}
+
+@app.post("/api/mcp/servers")
+async def register_mcp_server(req: MCPRegisterRequest):
+    mcp_manager.servers[req.id] = {
+        "name": req.name,
+        "type": req.type,
+        "command": req.command,
+        "url": req.url,
+        "enabled": True,
+        "tools": req.tools or ["default_action"]
+    }
+    mcp_manager.save_servers()
+    return {"status": "success", "server": mcp_manager.servers[req.id]}
+
+@app.get("/api/mcp/tools")
+async def get_mcp_tools():
+    return {"tools": mcp_manager.get_all_tools()}
+
+@app.post("/api/mcp/execute")
+async def execute_mcp_tool(req: MCPExecuteRequest):
+    res = mcp_manager.execute_tool(req.tool, req.args)
+    return res
+
+# ==========================================
+# 5. 3D 브레인 지식 그래프 & 자가 학습 API
 # ==========================================
 @app.get("/api/brain/graph")
 async def get_brain_graph():
@@ -221,7 +248,7 @@ async def consolidate_brain_memory():
     return brain_engine.auto_consolidate()
 
 # ==========================================
-# 5. 멀티 에이전트 오케스트레이션 API
+# 6. 멀티 에이전트 오케스트레이션 API
 # ==========================================
 @app.post("/api/orchestrate/stream")
 async def orchestrate_stream(req: PipelineRequest):
@@ -247,7 +274,7 @@ async def orchestrate_stream(req: PipelineRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 6. RAG 및 파인튜닝 데이터셋 API
+# 7. RAG 및 파인튜닝 데이터셋 API (Issue #12)
 # ==========================================
 @app.get("/api/rag/stats")
 async def get_rag_stats():
