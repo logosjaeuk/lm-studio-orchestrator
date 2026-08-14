@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LM Studio Orchestrator & Local Agent Studio</title>
+    <title>LM Studio Orchestrator & Autonomous Brain Studio</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -12,8 +12,8 @@
         <div class="brand-header">
             <div class="brand-logo">🧠</div>
             <div class="brand-text">
-                <h1>LM Orchestrator</h1>
-                <p>Local Agent & RAG Studio</p>
+                <h1>LM Brain Studio</h1>
+                <p>Autonomous AI & Orchestration</p>
             </div>
         </div>
 
@@ -28,7 +28,19 @@
 
         <!-- 메인 네비게이션 탭 -->
         <nav class="nav-menu">
-            <div class="nav-item active" onclick="switchView('canvasView')">
+            <div class="nav-item active" onclick="switchView('singleChatView')">
+                <span class="nav-icon">💬</span>
+                <span>1:1 싱글 챗</span>
+            </div>
+            <div class="nav-item" onclick="switchView('brainView')">
+                <span class="nav-icon">🧠</span>
+                <span>3D 브레인 지식망</span>
+            </div>
+            <div class="nav-item" onclick="switchView('selfLearningView')">
+                <span class="nav-icon">🧬</span>
+                <span>자가 학습 메모리</span>
+            </div>
+            <div class="nav-item" onclick="switchView('canvasView')">
                 <span class="nav-icon">🕸️</span>
                 <span>에이전트 캔버스</span>
             </div>
@@ -57,8 +69,86 @@
 
     <!-- 메인 컨텐츠 영역 -->
     <main class="main-content">
-        <!-- 1. 비주얼 에이전트 워크플로우 캔버스 뷰 -->
-        <section id="canvasView" class="view-section active">
+
+        <!-- 1. 1:1 싱글 챗 플레이그라운드 뷰 (Issue #1) -->
+        <section id="singleChatView" class="view-section active">
+            <header class="top-header">
+                <div class="page-title">💬 1:1 싱글 챗 플레이그라운드</div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="window.singleChat.createNewSession()">➕ 새 대화</button>
+                    <span id="tpsBadge" class="node-role-badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-green);">⚡ 0.0 t/s</span>
+                </div>
+            </header>
+            <div class="single-chat-layout">
+                <!-- 세션 히스토리 바 -->
+                <div class="session-sidebar">
+                    <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px;">대화 목록</div>
+                    <div class="session-list" id="chatSessionList"></div>
+                    <div style="margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border-color);">
+                        <div style="font-size: 10px; color: var(--text-dim); margin-bottom: 4px;">시스템 프롬프트 프리셋</div>
+                        <select id="presetSelect" class="custom-select"></select>
+                    </div>
+                </div>
+
+                <!-- 메인 대화창 -->
+                <div class="chat-workspace" style="max-width: 100%;">
+                    <div class="messages-list" id="singleChatMessages"></div>
+
+                    <div class="input-bar-container">
+                        <textarea id="singleChatInput" class="prompt-textarea" placeholder="로컬 LLM에게 메시지를 보내세요... (Enter: 전송, Shift+Enter: 줄바꿈)" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault(); window.singleChat.sendMessage();}"></textarea>
+                        <div class="input-options-bar">
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
+                                <input type="checkbox" id="singleRagToggle">
+                                <span>📚 RAG 문서 참조</span>
+                            </label>
+                            <button id="singleSendBtn" class="btn-primary" onclick="window.singleChat.sendMessage()">
+                                <span>전송</span>
+                                <span>➔</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. 3D 인터랙티브 뉴런 브레인 지식 그래프 뷰 (Issue #3) -->
+        <section id="brainView" class="view-section">
+            <header class="top-header">
+                <div class="page-title">🧠 3D 인터랙티브 뉴런 브레인 지식 그래프</div>
+                <div class="header-actions">
+                    <span id="brainNodeCount" class="node-role-badge">8개 지식 뉴런</span>
+                    <button class="btn-secondary" onclick="window.brainVisualizer.pulseRandomNeuron()">⚡ 시냅스 자극</button>
+                    <button class="btn-primary" onclick="switchView('selfLearningView')">🧬 자가 학습 메모리 관리</button>
+                </div>
+            </header>
+            <div class="canvas-container" id="brainContainer" style="background: radial-gradient(circle at center, #111827 0%, #06090e 100%);">
+                <canvas id="brainCanvas"></canvas>
+                <div style="position: absolute; bottom: 20px; left: 24px; font-size: 12px; color: var(--text-dim); pointer-events: none; background: rgba(15,20,32,0.8); padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border-color);">
+                    💡 <strong>3D 조작</strong>: 마우스 드래그로 360° 회전 | 마우스 휠로 줌인/아웃 | 노드 호버 시 상세 정보
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. 지속적 자가 학습 메모리 큐 뷰 (Issue #2) -->
+        <section id="selfLearningView" class="view-section">
+            <header class="top-header">
+                <div class="page-title">🧬 지속적 자가 학습 메모리 큐</div>
+                <div class="header-actions">
+                    <span id="totalMemoryCount" class="node-role-badge">0개의 지식 축적됨</span>
+                    <button class="btn-secondary" onclick="window.selfLearning.addManualKnowledge()">➕ 지식 수동 추가</button>
+                    <button class="btn-primary" onclick="window.selfLearning.consolidate()">⚡ 장기 기억 자가 압축</button>
+                </div>
+            </header>
+            <div style="padding: 24px; max-width: 900px; margin: 0 auto; width: 100%; height: calc(100vh - 56px); overflow-y: auto;">
+                <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px; line-height: 1.6;">
+                    사용자와의 대화가 축적되면 모델이 유용한 지식과 사용자 선호도를 자동으로 감지하여 <strong>[3D 브레인 뉴런]</strong>에 저장합니다.
+                </div>
+                <div id="selfLearningList" style="display: flex; flex-direction: column; gap: 12px;"></div>
+            </div>
+        </section>
+
+        <!-- 4. 비주얼 에이전트 워크플로우 캔버스 뷰 -->
+        <section id="canvasView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🕸️ 노드 기반 에이전트 워크플로우 캔버스</div>
                 <div class="header-actions">
@@ -73,7 +163,7 @@
             </div>
         </section>
 
-        <!-- 2. 멀티 에이전트 릴레이 / 토론 채팅 뷰 -->
+        <!-- 5. 멀티 에이전트 릴레이 / 토론 채팅 뷰 -->
         <section id="chatView" class="view-section">
             <header class="top-header">
                 <div class="page-title">👥 멀티 에이전트 실시간 오케스트레이터</div>
@@ -86,21 +176,17 @@
                 <div class="messages-list" id="messagesList">
                     <div class="agent-msg-card">
                         <div class="agent-msg-header">
-                            <div class="agent-info">
-                                <span>🤖</span>
-                                <span>LM Studio Orchestrator</span>
-                            </div>
+                            <div class="agent-info"><span>🤖</span><span>LM Studio Orchestrator</span></div>
                             <span class="node-role-badge">시스템</span>
                         </div>
                         <div class="msg-content">
-                            안녕하세요! LM Studio 로컬 LLM을 기반으로 <strong>[기획자 ➔ 개발자 ➔ 리뷰어]</strong> 순차 릴레이 또는 <strong>[토론형 아레나]</strong> 협업을 실행할 수 있습니다.<br>
-                            아래 프롬프트에 원하는 과업을 입력하고 실행해 보세요!
+                            안녕하세요! LM Studio 로컬 LLM을 기반으로 <strong>[기획자 ➔ 개발자 ➔ 리뷰어]</strong> 순차 릴레이 또는 <strong>[토론형 아레나]</strong> 협업을 실행할 수 있습니다.
                         </div>
                     </div>
                 </div>
 
                 <div class="input-bar-container">
-                    <textarea id="promptInput" class="prompt-textarea" placeholder="에이전트 팀에게 지시할 프로젝트 과업 또는 토론 주제를 입력하세요... (예: 초고속 파일 검색 CLI 도구 설계 및 파이썬 코드 작성)"></textarea>
+                    <textarea id="promptInput" class="prompt-textarea" placeholder="에이전트 팀에게 지시할 프로젝트 과업 또는 토론 주제를 입력하세요..."></textarea>
                     <div class="input-options-bar">
                         <div class="mode-pills">
                             <span class="pill-option active" id="modeSeq" onclick="setMode('sequential')">🔗 순차 릴레이</span>
@@ -119,7 +205,7 @@
             </div>
         </section>
 
-        <!-- 3. 로컬 문서 RAG 지식베이스 뷰 -->
+        <!-- 6. 로컬 문서 RAG 지식베이스 뷰 -->
         <section id="ragView" class="view-section">
             <header class="top-header">
                 <div class="page-title">📚 로컬 문서 RAG 지식베이스 매니저</div>
@@ -155,7 +241,7 @@
             </div>
         </section>
 
-        <!-- 4. 파인튜닝 데이터셋 & LoRA 스크립트 빌더 뷰 -->
+        <!-- 7. 파인튜닝 데이터셋 & LoRA 스크립트 빌더 뷰 -->
         <section id="datasetView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🧪 파인튜닝 데이터셋 & LoRA 스크립트 빌더</div>
@@ -190,6 +276,9 @@
 
     <!-- 스크립트 로드 -->
     <script src="js/api.js"></script>
+    <script src="js/single_chat.js"></script>
+    <script src="js/brain_3d.js"></script>
+    <script src="js/self_learning.js"></script>
     <script src="js/canvas.js"></script>
     <script src="js/chat.js"></script>
     <script src="js/rag.js"></script>
