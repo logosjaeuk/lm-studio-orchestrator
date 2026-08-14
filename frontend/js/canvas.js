@@ -49,11 +49,131 @@ class WorkflowCanvas {
         requestAnimationFrame(loop);
     }
 
-    // ==========================================
-    // 템플릿 프리셋 로더
-    // ==========================================
+    // ==========================================\n    // 템플릿 프리셋 로더\n    // ==========================================
     loadTemplate(type) {
-        if (type === 'fullstack') {
+        if (type === 'youtube_org') {
+            this.nodes = [
+                {
+                    id: "org_head",
+                    type: "agent",
+                    name: "👑 총괄 PD (Executive Director)",
+                    role: "기획 총괄 & 디렉팅",
+                    system_prompt: "당신은 100만 유튜브 채널 총괄 PD입니다. 전체 방향성을 지시하고 결과물을 종합 디렉팅하세요.",
+                    model: "default",
+                    temperature: 0.7,
+                    tools: ["web_search"],
+                    status: "idle",
+                    x: 60,
+                    y: 110
+                },
+                {
+                    id: "org_script",
+                    type: "agent",
+                    name: "📝 메인 시나리오 작가",
+                    role: "스토리 & 대본 집필",
+                    system_prompt: "초반 3초 후킹과 탄탄한 본론을 갖춘 쇼츠/롱폼 대본을 작성하세요.",
+                    model: "default",
+                    temperature: 0.6,
+                    tools: [],
+                    status: "idle",
+                    x: 380,
+                    y: 40
+                },
+                {
+                    id: "org_visual",
+                    type: "agent",
+                    name: "🎨 클릭유도 카피라이터",
+                    role: "썸네일 카피 & 제목",
+                    system_prompt: "CTR 15% 이상을 달성할 수 있는 영상 제목 5개와 썸네일 카피를 제안하세요.",
+                    model: "default",
+                    temperature: 0.8,
+                    tools: [],
+                    status: "idle",
+                    x: 380,
+                    y: 190
+                },
+                {
+                    id: "org_edit",
+                    type: "agent",
+                    name: "✂️ 타임라인 설계관",
+                    role: "SFX/BGM 편집 가이드",
+                    system_prompt: "구간별 효과음, 컷 전환, 자막 애니메이션 가이드를 상세히 작성하세요.",
+                    model: "default",
+                    temperature: 0.4,
+                    tools: [],
+                    status: "idle",
+                    x: 700,
+                    y: 110
+                }
+            ];
+            this.connections = [
+                { from: "org_head", to: "org_script" },
+                { from: "org_head", to: "org_visual" },
+                { from: "org_script", to: "org_edit" },
+                { from: "org_visual", to: "org_edit" }
+            ];
+        } else if (type === 'publishing_org') {
+            this.nodes = [
+                {
+                    id: "pub_head",
+                    type: "agent",
+                    name: "👑 수석 편집장 (Editor-in-Chief)",
+                    role: "출판 총괄 & 감수",
+                    system_prompt: "베스트셀러 출판사 수석 편집장입니다. 도서 기획을 총괄하고 원고를 감수하세요.",
+                    model: "default",
+                    temperature: 0.7,
+                    tools: [],
+                    status: "idle",
+                    x: 60,
+                    y: 110
+                },
+                {
+                    id: "pub_writer",
+                    type: "agent",
+                    name: "✍️ 도서 기획 & 필진",
+                    role: "목차 구성 & 본문 서술",
+                    system_prompt: "독자를 사로잡는 체계적인 목차와 챕터별 핵심 본문 원고를 작성하세요.",
+                    model: "default",
+                    temperature: 0.6,
+                    tools: [],
+                    status: "idle",
+                    x: 380,
+                    y: 40
+                },
+                {
+                    id: "pub_proof",
+                    type: "agent",
+                    name: "🔍 전문 교열관",
+                    role: "교정교열 & 팩트체크",
+                    system_prompt: "비문과 오탈자를 교정하고 사실 관계를 검증하세요.",
+                    model: "default",
+                    temperature: 0.2,
+                    tools: ["web_search"],
+                    status: "idle",
+                    x: 380,
+                    y: 190
+                },
+                {
+                    id: "pub_market",
+                    type: "agent",
+                    name: "📢 출판 마케터",
+                    role: "추천사 & 보도자료",
+                    system_prompt: "책 띠지 문구, 출판사 서평, 언론 보도자료를 작성하세요.",
+                    model: "default",
+                    temperature: 0.7,
+                    tools: [],
+                    status: "idle",
+                    x: 700,
+                    y: 110
+                }
+            ];
+            this.connections = [
+                { from: "pub_head", to: "pub_writer" },
+                { from: "pub_head", to: "pub_proof" },
+                { from: "pub_writer", to: "pub_market" },
+                { from: "pub_proof", to: "pub_market" }
+            ];
+        } else if (type === 'fullstack') {
             this.nodes = [
                 {
                     id: "node_1",
@@ -186,9 +306,7 @@ class WorkflowCanvas {
         this.renderNodes();
     }
 
-    // ==========================================
-    // 캔버스 실시간 파이프라인 실행 (Issue #9)
-    // ==========================================
+    // ==========================================\n    // 캔버스 실시간 파이프라인 실행 (Issue #9)\n    // ==========================================
     async runLivePipeline() {
         if (this.isExecuting) return;
         const task = prompt("에이전트 캔버스 파이프라인에 전달할 과업을 입력하세요:", "로컬 대시보드 구조 설계 및 알고리즘 구현");
@@ -259,9 +377,7 @@ class WorkflowCanvas {
         }
     }
 
-    // ==========================================
-    // 노드 렌더링
-    // ==========================================
+    // ==========================================\n    // 노드 렌더링\n    // ==========================================
     renderNodes() {
         if (!this.nodesLayer) return;
         this.nodesLayer.innerHTML = '';
@@ -357,9 +473,7 @@ class WorkflowCanvas {
         this.renderLines();
     }
 
-    // ==========================================
-    // 노드 설정 자율화 모달 제어
-    // ==========================================
+    // ==========================================\n    // 노드 설정 자율화 모달 제어\n    // ==========================================
     async openConfigModal(id) {
         const node = this.nodes.find(n => n.id === id);
         if (!node) return;
