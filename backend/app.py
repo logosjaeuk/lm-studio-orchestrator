@@ -17,8 +17,10 @@ from .code_sandbox import code_sandbox
 from .mcp_manager import mcp_manager
 from .provider_manager import provider_manager
 from .canvas_engine import canvas_engine
+from .org_templates import org_manager
+from .hierarchical_orchestrator import hierarchical_orchestrator
 
-app = FastAPI(title="LM Studio Orchestrator API", version="3.0.0")
+app = FastAPI(title="LM Studio Orchestrator API", version="4.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -37,13 +39,11 @@ class SingleChatRequest(BaseModel):
     use_rag: bool = False
     auto_learn: bool = True
 
-class PipelineRequest(BaseModel):
-    mode: str = "sequential"
-    user_input: str
-    agents: List[Dict[str, Any]] = []
+class OrgOrchestrateRequest(BaseModel):
+    org_id: str = "youtube_studio"
+    user_command: str
     use_rag: bool = False
     model: str = "default"
-    debate_rounds: Optional[int] = 2
 
 class CanvasRunRequest(BaseModel):
     nodes: List[Dict[str, Any]]
@@ -93,7 +93,28 @@ async def get_health():
     return await lm_client.check_health()
 
 # ==========================================
-# 1. 멀티 LLM 프로바이더 API (Issue #11)
+# 1. 범용 조직 템플릿 & 계층형 오케스트레이션 API (Issue #13)
+# ==========================================
+@app.get("/api/org/templates")
+async def get_org_templates():
+    return {"organizations": org_manager.get_all_orgs()}
+
+@app.post("/api/org/orchestrate/stream")
+async def orchestrate_org_stream(req: OrgOrchestrateRequest):
+    async def event_generator():
+        async for ev in hierarchical_orchestrator.run_organization_pipeline(
+            org_id=req.org_id,
+            user_command=req.user_command,
+            use_rag=req.use_rag,
+            model=req.model
+        ):
+            yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# ==========================================
+# 2. 멀티 LLM 프로바이더 API
 # ==========================================
 @app.get("/api/providers")
 async def get_providers():
@@ -104,7 +125,7 @@ async def get_providers():
     }
 
 # ==========================================
-# 2. 1:1 싱글 챗 플레이그라운드 API
+# 3. 1:1 싱글 챗 플레이그라운드 API
 # ==========================================
 @app.get("/api/presets")
 async def get_presets():
@@ -162,7 +183,7 @@ async def single_chat_stream(req: SingleChatRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 3. 캔버스 실시간 파이프라인 실행 API (Issue #9)
+# 4. 캔버스 실시간 파이프라인 실행 API
 # ==========================================
 @app.post("/api/canvas/run-pipeline")
 async def run_canvas_pipeline_stream(req: CanvasRunRequest):
@@ -203,7 +224,7 @@ async def list_canvas_workflows():
     return {}
 
 # ==========================================
-# 4. MCP (Model Context Protocol) API (Issue #10)
+# 5. MCP API
 # ==========================================
 @app.get("/api/mcp/servers")
 async def get_mcp_servers():
@@ -232,7 +253,7 @@ async def execute_mcp_tool(req: MCPExecuteRequest):
     return res
 
 # ==========================================
-# 5. 3D 브레인 지식 그래프 & 자가 학습 API
+# 6. 3D 브레인 & RAG API
 # ==========================================
 @app.get("/api/brain/graph")
 async def get_brain_graph():
@@ -247,35 +268,6 @@ async def add_brain_memory(req: AddMemoryRequest):
 async def consolidate_brain_memory():
     return brain_engine.auto_consolidate()
 
-# ==========================================
-# 6. 멀티 에이전트 오케스트레이션 API
-# ==========================================
-@app.post("/api/orchestrate/stream")
-async def orchestrate_stream(req: PipelineRequest):
-    async def event_generator():
-        if req.mode == "debate":
-            agent_a = req.agents[0] if len(req.agents) > 0 else {"name": "Proponent", "role": "찬성/기획자", "system_prompt": "당신은 혁신적인 아이디어를 적극 제안하는 기획자입니다."}
-            agent_b = req.agents[1] if len(req.agents) > 1 else {"name": "Critic", "role": "비판/검증자", "system_prompt": "당신은 현실적인 한계와 보안, 버그 가능성을 냉철하게 검증하는 아키텍트입니다."}
-            judge = req.agents[2] if len(req.agents) > 2 else {"name": "Judge", "role": "총괄 심판", "system_prompt": "당신은 두 의견을 종합하여 최적의 실행 계획을 도출하는 총괄 디렉터입니다."}
-            
-            async for ev in orchestrator_engine.run_debate_arena(agent_a, agent_b, judge, req.user_input, req.debate_rounds or 2, req.model):
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-        else:
-            default_agents = [
-                {"name": "🧠 Planner", "role": "요구사항 분석 및 기획", "system_prompt": "당신은 사용자의 요구사항을 심층 분석하고 체계적인 구현 전략과 아키텍처를 설계하는 수석 기획자입니다."},
-                {"name": "💻 Developer", "role": "실제 코드 및 산출물 작성", "system_prompt": "당신은 기획 내용을 바탕으로 견고하고 완성도 높은 실제 코드와 결과물을 작성하는 시니어 개발자입니다."},
-                {"name": "🔍 Reviewer", "role": "품질 검토 및 최적화 요약", "system_prompt": "당신은 결과물을 엄격히 검토하여 엣지 케이스, 성능 최적화 포인트, 최종 요약 보고서를 작성하는 QA 리드입니다."}
-            ]
-            agents_to_run = req.agents if req.agents else default_agents
-            async for ev in orchestrator_engine.run_sequential_pipeline(agents_to_run, req.user_input, req.use_rag, req.model):
-                yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
-        yield "data: [DONE]\n\n"
-
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
-
-# ==========================================
-# 7. RAG 및 파인튜닝 데이터셋 API (Issue #12)
-# ==========================================
 @app.get("/api/rag/stats")
 async def get_rag_stats():
     return rag_engine.get_stats()
@@ -331,7 +323,6 @@ async def generate_training_script(req: ScriptGenRequest):
     )
     return {"script": script}
 
-# 프론트엔드 정적 파일 서빙
 FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "frontend"))
 if os.path.exists(FRONTEND_DIR):
     app.mount("/", StaticFiles(directory=FRONTEND_DIR, html=True), name="frontend")
