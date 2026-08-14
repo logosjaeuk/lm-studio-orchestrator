@@ -1,84 +1,207 @@
-// 노드 기반 비주얼 에이전트 워크플로우 캔버스 엔진
+// 차세대 노드 기반 비주얼 에이전트 & 도구 워크플로우 캔버스 엔진 (Issue #4)
 class WorkflowCanvas {
     constructor() {
         this.container = document.getElementById('canvasContainer');
         this.canvas = document.getElementById('workflowCanvas');
         this.nodesLayer = document.getElementById('nodesLayer');
+        if (!this.canvas) return;
         this.ctx = this.canvas.getContext('2d');
+
         this.nodes = [];
         this.connections = []; // [{from: id, to: id}]
+        this.zoom = 1.0;
         this.draggingNode = null;
         this.dragOffset = { x: 0, y: 0 };
+        this.connectingFrom = null;
 
+        this.init();
+    }
+
+    init() {
         this.initCanvasSize();
         window.addEventListener('resize', () => this.initCanvasSize());
-        this.setupDefaultTemplate();
+        this.loadTemplate('fullstack');
         this.renderLines();
     }
 
     initCanvasSize() {
-        if (!this.container) return;
+        if (!this.container || !this.canvas) return;
         this.canvas.width = this.container.clientWidth;
         this.canvas.height = this.container.clientHeight;
         this.renderLines();
     }
 
-    setupDefaultTemplate() {
-        this.nodes = [
-            {
-                id: "node_1",
-                name: "🧠 수석 기획자 (Planner)",
-                role: "요구사항 분석 & 설계",
-                system_prompt: "당신은 사용자의 요구사항을 심층 분석하고 체계적인 구현 전략과 기술 아키텍처를 설계하는 수석 기획자입니다.",
-                x: 60,
-                y: 120
-            },
-            {
-                id: "node_2",
-                name: "💻 시니어 개발자 (Coder)",
-                role: "실제 코드 구현",
-                system_prompt: "당신은 기획 내용을 바탕으로 견고하고 최적화된 실제 코드 및 산출물을 작성하는 시니어 개발자입니다.",
-                x: 360,
-                y: 120
-            },
-            {
-                id: "node_3",
-                name: "🔍 QA 리드 (Reviewer)",
-                role: "품질 검토 & 종합 요약",
-                system_prompt: "당신은 결과물을 엄격히 검토하여 엣지 케이스, 성능 최적화 포인트, 최종 요약 보고서를 작성하는 QA 리드입니다.",
-                x: 660,
-                y: 120
-            }
-        ];
-
-        this.connections = [
-            { from: "node_1", to: "node_2" },
-            { from: "node_2", to: "node_3" }
-        ];
-
+    // ==========================================
+    // 템플릿 프리셋 로더
+    // ==========================================
+    loadTemplate(type) {
+        if (type === 'fullstack') {
+            this.nodes = [
+                {
+                    id: "node_1",
+                    type: "agent",
+                    name: "🧠 수석 기획자 (Planner)",
+                    role: "요구사항 분석 & 설계",
+                    system_prompt: "당신은 요구사항을 심층 분석하고 체계적인 아키텍처와 구현 계획을 설계하는 수석 기획자입니다.",
+                    x: 60,
+                    y: 100
+                },
+                {
+                    id: "node_2",
+                    type: "agent",
+                    name: "💻 시니어 개발자 (Coder)",
+                    role: "실제 코드 구현",
+                    system_prompt: "당신은 기획 내용을 바탕으로 견고하고 최적화된 실제 코드 및 산출물을 작성하는 시니어 개발자입니다.",
+                    x: 380,
+                    y: 100
+                },
+                {
+                    id: "node_3",
+                    type: "agent",
+                    name: "🔍 QA 리드 (Reviewer)",
+                    role: "품질 검토 & 요약",
+                    system_prompt: "당신은 결과물을 엄격히 검토하여 엣지 케이스, 성능 최적화 포인트, 최종 요약 보고서를 작성하는 QA 리드입니다.",
+                    x: 700,
+                    y: 100
+                }
+            ];
+            this.connections = [
+                { from: "node_1", to: "node_2" },
+                { from: "node_2", to: "node_3" }
+            ];
+        } else if (type === 'rag_qa') {
+            this.nodes = [
+                {
+                    id: "node_rag_1",
+                    type: "rag",
+                    name: "📚 로컬 RAG 검색기",
+                    role: "지식베이스 질의",
+                    query: "최근 프로젝트 아키텍처 문서 검색",
+                    x: 60,
+                    y: 120
+                },
+                {
+                    id: "node_rag_2",
+                    type: "agent",
+                    name: "🤖 지식 기반 답변가",
+                    role: "문서 기반 Q&A",
+                    system_prompt: "검색된 지식베이스 문서를 바탕으로 사용자의 질문에 정확하고 왜곡 없이 답변하세요.",
+                    x: 380,
+                    y: 120
+                },
+                {
+                    id: "node_rag_3",
+                    type: "agent",
+                    name: "🛡️ 팩트체커 (Verifier)",
+                    role: "출처 검증",
+                    system_prompt: "작성된 답변이 원본 문서와 일치하는지 환각(Hallucination) 여부를 엄격히 검증하세요.",
+                    x: 700,
+                    y: 120
+                }
+            ];
+            this.connections = [
+                { from: "node_rag_1", to: "node_rag_2" },
+                { from: "node_rag_2", to: "node_rag_3" }
+            ];
+        } else if (type === 'python_runner') {
+            this.nodes = [
+                {
+                    id: "node_py_1",
+                    type: "agent",
+                    name: "🐍 알고리즘 설계 에이전트",
+                    role: "파이썬 코드 생성",
+                    system_prompt: "사용자의 문제에 대한 완전하고 실행 가능한 파이썬 코드를 작성하세요.",
+                    x: 60,
+                    y: 100
+                },
+                {
+                    id: "node_py_2",
+                    type: "python",
+                    name: "⚡ 파이썬 실행 샌드박스",
+                    role: "실시간 로컬 실행기",
+                    code: "import math\n\n# 예시: 1부터 100까지 소수 계산\ndef get_primes(n):\n    primes = []\n    for i in range(2, n + 1):\n        if all(i % p != 0 for p in primes):\n            primes.append(i)\n    return primes\n\nprint('계산된 소수 목록:', get_primes(30))\nprint('완료!')",
+                    x: 400,
+                    y: 80
+                },
+                {
+                    id: "node_py_3",
+                    type: "output",
+                    name: "💾 결과 리포트 내보내기",
+                    role: "파일 자동 저장",
+                    filename: "result_output.txt",
+                    x: 780,
+                    y: 120
+                }
+            ];
+            this.connections = [
+                { from: "node_py_1", to: "node_py_2" },
+                { from: "node_py_2", to: "node_py_3" }
+            ];
+        }
         this.renderNodes();
     }
 
+    // ==========================================
+    // 노드 렌더링
+    // ==========================================
     renderNodes() {
+        if (!this.nodesLayer) return;
         this.nodesLayer.innerHTML = '';
+
         this.nodes.forEach(node => {
             const el = document.createElement('div');
-            el.className = 'agent-node';
+            el.className = `agent-node node-type-${node.type}`;
             el.id = node.id;
             el.style.left = `${node.x}px`;
             el.style.top = `${node.y}px`;
 
+            let bodyContent = '';
+            if (node.type === 'agent') {
+                bodyContent = `
+                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+                        <strong>System:</strong>
+                        <textarea class="node-input" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'system_prompt', this.value)" style="width:100%; height:45px; margin-top:4px; font-size:11px;">${node.system_prompt}</textarea>
+                    </div>
+                `;
+            } else if (node.type === 'python') {
+                bodyContent = `
+                    <div style="font-size:11px; margin-bottom:6px;">
+                        <textarea class="node-input" id="code_${node.id}" style="width:100%; height:80px; font-family:'JetBrains Mono',monospace; font-size:10px; color:#38BDF8;" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'code', this.value)">${node.code || ''}</textarea>
+                        <button class="btn-primary" style="width:100%; margin-top:4px; padding:4px; font-size:11px; justify-content:center;" onclick="window.workflowCanvas.runPythonNode('${node.id}')">▶ 코드 즉시 실행</button>
+                        <div id="output_${node.id}" style="margin-top:6px; font-size:10px; color:#A7F3D0; font-family:'JetBrains Mono',monospace; max-height:45px; overflow-y:auto; background:rgba(0,0,0,0.4); padding:4px; border-radius:4px; display:none;"></div>
+                    </div>
+                `;
+            } else if (node.type === 'rag') {
+                bodyContent = `
+                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+                        <span>검색 쿼리:</span>
+                        <input type="text" class="node-input" value="${node.query || ''}" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'query', this.value)" style="width:100%; margin-top:4px; font-size:11px;">
+                    </div>
+                `;
+            } else if (node.type === 'output') {
+                bodyContent = `
+                    <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+                        <span>저장 파일명:</span>
+                        <input type="text" class="node-input" value="${node.filename || 'output.txt'}" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'filename', this.value)" style="width:100%; margin-top:4px; font-size:11px;">
+                    </div>
+                `;
+            }
+
             el.innerHTML = `
                 <div class="node-header">
-                    <span class="node-title">${node.name}</span>
-                    <span class="node-role-badge">${node.role}</span>
+                    <div style="display:flex; align-items:center; gap:6px;">
+                        <span class="node-title">${node.name}</span>
+                    </div>
+                    <div style="display:flex; align-items:center; gap:4px;">
+                        <span class="node-role-badge">${node.role}</span>
+                        <button onclick="window.workflowCanvas.deleteNode('${node.id}')" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:11px;">✕</button>
+                    </div>
                 </div>
                 <div class="node-body">
-                    <p style="margin-bottom: 6px;"><strong>System:</strong> ${node.system_prompt.slice(0, 48)}...</p>
+                    ${bodyContent}
                 </div>
             `;
 
-            // 드래그 이벤트 바인딩
             el.addEventListener('mousedown', (e) => this.onNodeMouseDown(e, node, el));
             this.nodesLayer.appendChild(el);
         });
@@ -86,8 +209,81 @@ class WorkflowCanvas {
         this.renderLines();
     }
 
+    updateNodeProp(id, prop, val) {
+        const node = this.nodes.find(n => n.id === id);
+        if (node) node[prop] = val;
+    }
+
+    async runPythonNode(id) {
+        const node = this.nodes.find(n => n.id === id);
+        if (!node) return;
+
+        const code = document.getElementById(`code_${id}`)?.value || node.code;
+        const outEl = document.getElementById(`output_${id}`);
+        if (outEl) {
+            outEl.style.display = 'block';
+            outEl.innerText = '실행 중...';
+        }
+
+        try {
+            const res = await fetch('/api/canvas/execute-python', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: code })
+            });
+            const data = await res.json();
+            if (outEl) {
+                outEl.innerText = data.output;
+            }
+        } catch (e) {
+            if (outEl) outEl.innerText = `Error: ${e.message}`;
+        }
+    }
+
+    deleteNode(id) {
+        this.nodes = this.nodes.filter(n => n.id !== id);
+        this.connections = this.connections.filter(c => c.from !== id && c.to !== id);
+        this.renderNodes();
+    }
+
+    addCustomNode(type) {
+        const count = this.nodes.length + 1;
+        let newNode = {
+            id: `node_${Date.now()}`,
+            type: type,
+            x: 100 + (count % 3) * 80,
+            y: 120 + (count % 3) * 60
+        };
+
+        if (type === 'agent') {
+            newNode.name = `🤖 Agent ${count}`;
+            newNode.role = "추론 및 협업";
+            newNode.system_prompt = "당신은 팀의 핵심 작업을 분담하는 전문 에이전트입니다.";
+        } else if (type === 'python') {
+            newNode.name = `⚡ Python Runner ${count}`;
+            newNode.role = "코드 실행기";
+            newNode.code = "print('Hello from Canvas Python Sandbox!')";
+        } else if (type === 'rag') {
+            newNode.name = `📚 RAG Retriever ${count}`;
+            newNode.role = "지식 검색기";
+            newNode.query = "핵심 키워드 검색";
+        } else if (type === 'output') {
+            newNode.name = `💾 Output File ${count}`;
+            newNode.role = "결과 내보내기";
+            newNode.filename = `report_${count}.txt`;
+        }
+
+        if (this.nodes.length > 0) {
+            const last = this.nodes[this.nodes.length - 1];
+            this.connections.push({ from: last.id, to: newNode.id });
+        }
+
+        this.nodes.push(newNode);
+        this.renderNodes();
+    }
+
     onNodeMouseDown(e, node, el) {
-        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         this.draggingNode = node;
         this.dragOffset = {
             x: e.clientX - node.x,
@@ -114,6 +310,7 @@ class WorkflowCanvas {
     }
 
     renderLines() {
+        if (!this.ctx) return;
         this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
 
         this.connections.forEach(conn => {
@@ -121,16 +318,16 @@ class WorkflowCanvas {
             const toNode = this.nodes.find(n => n.id === conn.to);
             if (!fromNode || !toNode) return;
 
-            const startX = fromNode.x + 220; // 노드 오른쪽 끝
-            const startY = fromNode.y + 45;  // 노드 세로 중앙
-            const endX = toNode.x;           // 대상 노드 왼쪽 시작
+            const nodeW = 240;
+            const startX = fromNode.x + nodeW;
+            const startY = fromNode.y + 45;
+            const endX = toNode.x;
             const endY = toNode.y + 45;
 
             this.ctx.save();
             this.ctx.beginPath();
             this.ctx.moveTo(startX, startY);
 
-            // 부드러운 베지에 곡선
             const cp1X = startX + (endX - startX) / 2;
             const cp1Y = startY;
             const cp2X = startX + (endX - startX) / 2;
@@ -141,38 +338,17 @@ class WorkflowCanvas {
             this.ctx.lineWidth = 2.5;
             this.ctx.stroke();
 
-            // 화살표 팁
+            // 화살표 헤드
             this.ctx.fillStyle = '#6366F1';
             this.ctx.beginPath();
-            this.ctx.arc(endX, endY, 4, 0, Math.PI * 2);
+            this.ctx.arc(endX, endY, 5, 0, Math.PI * 2);
             this.ctx.fill();
-
             this.ctx.restore();
         });
     }
 
-    addNode() {
-        const count = this.nodes.length + 1;
-        const newNode = {
-            id: `node_${Date.now()}`,
-            name: `🤖 Agent ${count}`,
-            role: `보조 역할 ${count}`,
-            system_prompt: `당신은 ${count}번째 협업 에이전트입니다.`,
-            x: 80 + (count - 1) * 60,
-            y: 200 + (count % 2) * 60
-        };
-
-        if (this.nodes.length > 0) {
-            const lastNode = this.nodes[this.nodes.length - 1];
-            this.connections.push({ from: lastNode.id, to: newNode.id });
-        }
-
-        this.nodes.push(newNode);
-        this.renderNodes();
-    }
-
     getPipelineAgents() {
-        return this.nodes.map(n => ({
+        return this.nodes.filter(n => n.type === 'agent').map(n => ({
             name: n.name,
             role: n.role,
             system_prompt: n.system_prompt

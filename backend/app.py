@@ -13,8 +13,9 @@ from .rag_engine import rag_engine
 from .dataset_builder import dataset_builder
 from .orchestrator import orchestrator_engine
 from .brain_memory import brain_engine
+from .code_sandbox import code_sandbox
 
-app = FastAPI(title="LM Studio Orchestrator API", version="2.0.0")
+app = FastAPI(title="LM Studio Orchestrator API", version="2.1.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,6 +42,13 @@ class PipelineRequest(BaseModel):
     model: str = "default"
     debate_rounds: Optional[int] = 2
 
+class PythonExecRequest(BaseModel):
+    code: str
+
+class CanvasSaveRequest(BaseModel):
+    name: str = "default_workflow"
+    workflow: Dict[str, Any]
+
 class AddMemoryRequest(BaseModel):
     title: str
     content: str
@@ -58,6 +66,8 @@ class ScriptGenRequest(BaseModel):
     lora_r: int = 16
     learning_rate: float = 2e-4
 
+WORKFLOW_STORAGE = "./knowledge_base/saved_workflows.json"
+
 @app.get("/api/health")
 async def get_health():
     """LM Studio 헬스체크 및 모델 목록 조회"""
@@ -68,7 +78,6 @@ async def get_health():
 # ==========================================
 @app.get("/api/presets")
 async def get_presets():
-    """시스템 프롬프트 프리셋 목록"""
     return [
         {"id": "general", "name": "🤖 범용 AI 비서", "prompt": "당신은 사용자의 질문에 정확하고 명료하게 답하는 지능형 어시스턴트입니다."},
         {"id": "coder", "name": "💻 수석 소프트웨어 엔지니어", "prompt": "당신은 최고 수준의 시니어 풀스택 개발자입니다. 견고하고 최적화된 코드와 명확한 주석을 작성하세요."},
@@ -78,11 +87,8 @@ async def get_presets():
 
 @app.post("/api/single-chat/stream")
 async def single_chat_stream(req: SingleChatRequest):
-    """1:1 싱글 챗 SSE 스트리밍 & 실시간 토큰/초(t/s) 측정"""
     async def event_generator():
         msgs = req.messages.copy()
-        
-        # RAG 맥락 주입
         last_user_msg = next((m["content"] for m in reversed(msgs) if m["role"] == "user"), "")
         rag_context = ""
         if req.use_rag and last_user_msg:
@@ -113,7 +119,6 @@ async def single_chat_stream(req: SingleChatRequest):
             }
             yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-        # 자가 학습 큐에 자동 적재 (Issue #2)
         if req.auto_learn and len(last_user_msg) > 8 and len(full_response) > 20:
             brain_engine.add_memory(
                 title=last_user_msg[:30] + "...",
@@ -127,11 +132,45 @@ async def single_chat_stream(req: SingleChatRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 2. 3D 브레인 지식 그래프 & 자가 학습 API (Issue #2, #3)
+# 2. 캔버스 도구 노드 & 워크플로우 API (Issue #4)
+# ==========================================
+@app.post("/api/canvas/execute-python")
+async def execute_python(req: PythonExecRequest):
+    """파이썬 코드 실행 샌드박스"""
+    return code_sandbox.execute_python(req.code)
+
+@app.post("/api/canvas/save")
+async def save_canvas_workflow(req: CanvasSaveRequest):
+    """캔버스 워크플로우 저장"""
+    os.makedirs(os.path.dirname(WORKFLOW_STORAGE), exist_ok=True)
+    workflows = {}
+    if os.path.exists(WORKFLOW_STORAGE):
+        try:
+            with open(WORKFLOW_STORAGE, "r", encoding="utf-8") as f:
+                workflows = json.load(f)
+        except Exception:
+            workflows = {}
+    workflows[req.name] = req.workflow
+    with open(WORKFLOW_STORAGE, "w", encoding="utf-8") as f:
+        json.dump(workflows, f, indent=2, ensure_ascii=False)
+    return {"status": "saved", "name": req.name}
+
+@app.get("/api/canvas/workflows")
+async def list_canvas_workflows():
+    """저장된 워크플로우 목록"""
+    if os.path.exists(WORKFLOW_STORAGE):
+        try:
+            with open(WORKFLOW_STORAGE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+# ==========================================
+# 3. 3D 브레인 지식 그래프 & 자가 학습 API
 # ==========================================
 @app.get("/api/brain/graph")
 async def get_brain_graph():
-    """3D 브레인 뉴런 노드 및 시냅스 링크 그래프"""
     return brain_engine.get_3d_brain_graph()
 
 @app.post("/api/brain/memory")
@@ -144,7 +183,7 @@ async def consolidate_brain_memory():
     return brain_engine.auto_consolidate()
 
 # ==========================================
-# 3. 멀티 에이전트 오케스트레이션 API
+# 4. 멀티 에이전트 오케스트레이션 API
 # ==========================================
 @app.post("/api/orchestrate/stream")
 async def orchestrate_stream(req: PipelineRequest):
@@ -170,7 +209,7 @@ async def orchestrate_stream(req: PipelineRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 4. RAG 및 파인튜닝 데이터셋 API
+# 5. RAG 및 파인튜닝 데이터셋 API
 # ==========================================
 @app.get("/api/rag/stats")
 async def get_rag_stats():
@@ -182,7 +221,6 @@ async def upload_rag_document(file: UploadFile = File(...)):
         content = await file.read()
         text = content.decode("utf-8", errors="ignore")
         chunk_count = rag_engine.add_document_text(file.filename, text, save_disk=True)
-        # 3D 브레인 메모리에도 뉴런으로 자동 연동
         brain_engine.add_memory(
             title=f"Doc: {file.filename}",
             content=text[:180] + "...",
