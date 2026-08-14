@@ -44,6 +44,10 @@
                 <span class="nav-icon">🕸️</span>
                 <span>에이전트 캔버스</span>
             </div>
+            <div class="nav-item" onclick="switchView('mcpView')">
+                <span class="nav-icon">🔌</span>
+                <span>MCP 도구 매니저</span>
+            </div>
             <div class="nav-item" onclick="switchView('chatView')">
                 <span class="nav-icon">👥</span>
                 <span>멀티 에이전트 릴레이</span>
@@ -70,7 +74,7 @@
     <!-- 메인 컨텐츠 영역 -->
     <main class="main-content">
 
-        <!-- 1. 1:1 싱글 챗 플레이그라운드 뷰 (Issue #1) -->
+        <!-- 1. 1:1 싱글 챗 플레이그라운드 뷰 (Issue #1, #6: Stop Generation) -->
         <section id="singleChatView" class="view-section active">
             <header class="top-header">
                 <div class="page-title">💬 1:1 싱글 챗 플레이그라운드</div>
@@ -99,10 +103,15 @@
                                 <input type="checkbox" id="singleRagToggle">
                                 <span>📚 RAG 문서 참조</span>
                             </label>
-                            <button id="singleSendBtn" class="btn-primary" onclick="window.singleChat.sendMessage()">
-                                <span>전송</span>
-                                <span>➔</span>
-                            </button>
+                            <div style="display: flex; gap: 8px;">
+                                <button id="singleStopBtn" class="btn-secondary" style="display: none; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #EF4444;" onclick="window.singleChat.stopGeneration()">
+                                    <span>⏹️ 생성 중지</span>
+                                </button>
+                                <button id="singleSendBtn" class="btn-primary" onclick="window.singleChat.sendMessage()">
+                                    <span>전송</span>
+                                    <span>➔</span>
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -145,25 +154,23 @@
             </div>
         </section>
 
-        <!-- 4. 비주얼 에이전트 워크플로우 캔버스 뷰 (대폭 강화된 툴바 & 노드 팔레트) -->
+        <!-- 4. 비주얼 에이전트 워크플로우 캔버스 뷰 (Issue #4, #7, #8: 노드 설정 자율화) -->
         <section id="canvasView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🕸️ 노드 기반 에이전트 & 도구 워크플로우 캔버스</div>
                 <div class="header-actions">
-                    <!-- 템플릿 로드 선택 -->
                     <select id="canvasTemplateSelect" class="custom-select" style="width: 170px; padding: 5px 8px; font-size: 11px;" onchange="window.workflowCanvas.loadTemplate(this.value)">
                         <option value="fullstack">🚀 풀스택 파이프라인</option>
                         <option value="rag_qa">🔍 RAG Q&A 검증망</option>
                         <option value="python_runner">🐍 파이썬 샌드박스 실행</option>
                     </select>
-                    <!-- 노드 추가 팔레트 -->
                     <div style="display: flex; gap: 4px;">
                         <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('agent')">➕ Agent</button>
                         <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('python')">➕ Python</button>
                         <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('rag')">➕ RAG</button>
                         <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('output')">➕ Output</button>
                     </div>
-                    <button class="btn-primary" onclick="runCanvasWorkflow()">▶ 워크플로우 실행</button>
+                    <button class="btn-primary" onclick="switchView('chatView')">▶ 오케스트레이션 실행</button>
                 </div>
             </header>
             <div class="canvas-container" id="canvasContainer">
@@ -172,7 +179,28 @@
             </div>
         </section>
 
-        <!-- 5. 멀티 에이전트 릴레이 / 토론 채팅 뷰 -->
+        <!-- 5. MCP 도구 매니저 뷰 (Issue #5) -->
+        <section id="mcpView" class="view-section">
+            <header class="top-header">
+                <div class="page-title">🔌 MCP (Model Context Protocol) 도구 & 서버 매니저</div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="window.mcpManager.loadServers(); window.mcpManager.loadTools();">🔄 새로고침</button>
+                    <button class="btn-primary" onclick="window.mcpManager.registerNewServer()">➕ 새 MCP 서버 등록</button>
+                </div>
+            </header>
+            <div class="rag-layout">
+                <div class="rag-sidebar">
+                    <div style="font-weight: 700; font-size: 13px; color: var(--text-main); margin-bottom: 10px;">등록된 MCP 서버</div>
+                    <div id="mcpServerList" style="display: flex; flex-direction: column; gap: 8px; overflow-y: auto;"></div>
+                </div>
+                <div class="rag-main">
+                    <div style="font-weight: 700; font-size: 13px; margin-bottom: 12px;">사용 가능한 활성 MCP 도구 (Tools)</div>
+                    <div id="mcpToolList" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; overflow-y: auto;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 6. 멀티 에이전트 릴레이 / 토론 채팅 뷰 (Issue #6: Stop Orchesration) -->
         <section id="chatView" class="view-section">
             <header class="top-header">
                 <div class="page-title">👥 멀티 에이전트 실시간 오케스트레이터</div>
@@ -189,7 +217,7 @@
                             <span class="node-role-badge">시스템</span>
                         </div>
                         <div class="msg-content">
-                            안녕하세요! LM Studio 로컬 LLM을 기반으로 <strong>[기획자 ➔ 개발자 ➔ 리뷰어]</strong> 순차 릴레이 또는 <strong>[토론형 아레나]</strong> 협업을 실행할 수 있습니다.
+                            안녕하세요! 캔버스에서 구성한 독립 MCP 도구와 파라미터가 각 에이전트에게 자동으로 적용됩니다.
                         </div>
                     </div>
                 </div>
@@ -205,16 +233,21 @@
                                 <span>📚 RAG 문서 참조</span>
                             </label>
                         </div>
-                        <button id="sendBtn" class="btn-primary" onclick="startOrchestration()">
-                            <span>실행</span>
-                            <span>➔</span>
-                        </button>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="stopOrchestrateBtn" class="btn-secondary" style="display: none; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #EF4444;" onclick="stopOrchestration()">
+                                <span>⏹️ 오케스트레이션 중지</span>
+                            </button>
+                            <button id="sendBtn" class="btn-primary" onclick="startOrchestration()">
+                                <span>실행</span>
+                                <span>➔</span>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
         </section>
 
-        <!-- 6. 로컬 문서 RAG 지식베이스 뷰 -->
+        <!-- 7. 로컬 문서 RAG 지식베이스 뷰 -->
         <section id="ragView" class="view-section">
             <header class="top-header">
                 <div class="page-title">📚 로컬 문서 RAG 지식베이스 매니저</div>
@@ -250,7 +283,7 @@
             </div>
         </section>
 
-        <!-- 7. 파인튜닝 데이터셋 & LoRA 스크립트 빌더 뷰 -->
+        <!-- 8. 파인튜닝 데이터셋 & LoRA 스크립트 빌더 뷰 -->
         <section id="datasetView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🧪 파인튜닝 데이터셋 & LoRA 스크립트 빌더</div>
@@ -283,12 +316,49 @@
         </section>
     </main>
 
+    <!-- 에이전트 노드 상세 설정 자율화 모달 (Issue #8) -->
+    <div id="nodeConfigModal" style="display: none; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); backdrop-filter: blur(8px); z-index: 100; align-items: center; justify-content: center;">
+        <div style="background: #111827; border: 1px solid var(--border-color); border-radius: 12px; width: 480px; max-width: 90vw; padding: 20px; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 16px 40px rgba(0,0,0,0.6);">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                <div style="font-weight: 700; font-size: 14px;">⚙️ 에이전트 노드 자율 설정</div>
+                <button onclick="window.workflowCanvas.closeConfigModal()" style="background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 14px;">✕</button>
+            </div>
+            <div>
+                <label style="font-size: 11px; color: var(--text-dim); font-weight: 700;">에이전트 이름</label>
+                <input type="text" id="cfgNodeName" class="node-input" style="width: 100%; margin-top: 4px;">
+            </div>
+            <div>
+                <label style="font-size: 11px; color: var(--text-dim); font-weight: 700;">역할 (Role)</label>
+                <input type="text" id="cfgNodeRole" class="node-input" style="width: 100%; margin-top: 4px;">
+            </div>
+            <div>
+                <div style="display: flex; justify-content: space-between; font-size: 11px; color: var(--text-dim); font-weight: 700;">
+                    <span>창의성 (Temperature): <strong id="cfgTempLabel">0.7</strong></span>
+                </div>
+                <input type="range" id="cfgNodeTemp" min="0.0" max="1.0" step="0.05" style="width: 100%; margin-top: 4px;" oninput="document.getElementById('cfgTempLabel').innerText = this.value">
+            </div>
+            <div>
+                <label style="font-size: 11px; color: var(--text-dim); font-weight: 700;">독립 MCP 도구 / 스킬 할당</label>
+                <div id="cfgToolCheckboxes" style="margin-top: 6px; display: flex; flex-direction: column; gap: 6px; max-height: 100px; overflow-y: auto; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 6px; border: 1px solid var(--border-color);"></div>
+            </div>
+            <div>
+                <label style="font-size: 11px; color: var(--text-dim); font-weight: 700;">시스템 프롬프트 (System Prompt)</label>
+                <textarea id="cfgNodePrompt" class="node-input" style="width: 100%; height: 75px; margin-top: 4px; font-size: 12px;"></textarea>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px;">
+                <button class="btn-secondary" onclick="window.workflowCanvas.closeConfigModal()">취소</button>
+                <button class="btn-primary" onclick="window.workflowCanvas.saveNodeConfig()">저장 및 적용</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 스크립트 로드 -->
     <script src="js/api.js"></script>
     <script src="js/single_chat.js"></script>
     <script src="js/brain_3d.js"></script>
     <script src="js/self_learning.js"></script>
     <script src="js/canvas.js"></script>
+    <script src="js/mcp.js"></script>
     <script src="js/chat.js"></script>
     <script src="js/rag.js"></script>
     <script src="js/app.js"></script>

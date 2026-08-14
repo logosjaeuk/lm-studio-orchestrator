@@ -1,23 +1,25 @@
-// 1:1 싱글 챗 플레이그라운드 매니저 (Issue #1)
-class SingleChatManager {
+// 1:1 싱글 챗 플레이그라운드 클라이언트 엔진 (Issue #1, #6)
+class SingleChat {
     constructor() {
         this.sessions = JSON.parse(localStorage.getItem('single_chat_sessions') || '[]');
         this.currentSessionId = null;
-        this.messages = [];
         this.isStreaming = false;
+        this.abortController = null;
 
-        this.chatMessagesEl = document.getElementById('singleChatMessages');
-        this.inputEl = document.getElementById('singleChatInput');
+        this.messagesContainer = document.getElementById('singleChatMessages');
+        this.sessionListContainer = document.getElementById('chatSessionList');
+        this.inputArea = document.getElementById('singleChatInput');
         this.sendBtn = document.getElementById('singleSendBtn');
-        this.sessionListEl = document.getElementById('chatSessionList');
+        this.stopBtn = document.getElementById('singleStopBtn');
         this.tpsBadge = document.getElementById('tpsBadge');
         this.presetSelect = document.getElementById('presetSelect');
+        this.ragToggle = document.getElementById('singleRagToggle');
 
         this.init();
     }
 
-    init() {
-        this.loadPresets();
+    async init() {
+        await this.loadPresets();
         if (this.sessions.length === 0) {
             this.createNewSession();
         } else {
@@ -27,192 +29,199 @@ class SingleChatManager {
     }
 
     async loadPresets() {
+        if (!this.presetSelect) return;
         try {
             const res = await fetch('/api/presets');
             const presets = await res.json();
-            if (this.presetSelect) {
-                this.presetSelect.innerHTML = '';
-                presets.forEach(p => {
-                    const opt = document.createElement('option');
-                    opt.value = p.prompt;
-                    opt.innerText = p.name;
-                    this.presetSelect.appendChild(opt);
-                });
-            }
+            this.presetSelect.innerHTML = '';
+            presets.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.prompt;
+                opt.innerText = p.name;
+                this.presetSelect.appendChild(opt);
+            });
         } catch (e) {
-            console.error("Presets load error:", e);
+            console.error('프리셋 로드 오류:', e);
         }
-    }
-
-    createNewSession() {
-        const id = `session_${Date.now()}`;
-        const newSession = {
-            id: id,
-            title: "새로운 대화",
-            messages: [],
-            createdAt: new Date().toLocaleTimeString()
-        };
-        this.sessions.unshift(newSession);
-        this.saveSessions();
-        this.switchSession(id);
-        this.renderSessionList();
-    }
-
-    switchSession(id) {
-        this.currentSessionId = id;
-        const session = this.sessions.find(s => s.id === id);
-        if (session) {
-            this.messages = session.messages || [];
-            this.renderMessages();
-        }
-        this.renderSessionList();
     }
 
     saveSessions() {
         localStorage.setItem('single_chat_sessions', JSON.stringify(this.sessions));
     }
 
+    createNewSession() {
+        const newSession = {
+            id: `session_${Date.now()}`,
+            title: `새 대화 ${this.sessions.length + 1}`,
+            messages: [
+                { role: "assistant", content: "안녕하세요! 어떤 도움이 필요하신가요?" }
+            ],
+            createdAt: new Date().toISOString()
+        };
+        this.sessions.unshift(newSession);
+        this.saveSessions();
+        this.switchSession(newSession.id);
+        this.renderSessionList();
+    }
+
+    switchSession(id) {
+        this.currentSessionId = id;
+        this.renderMessages();
+        this.renderSessionList();
+    }
+
+    getCurrentSession() {
+        return this.sessions.find(s => s.id === this.currentSessionId);
+    }
+
     renderSessionList() {
-        if (!this.sessionListEl) return;
-        this.sessionListEl.innerHTML = '';
+        if (!this.sessionListContainer) return;
+        this.sessionListContainer.innerHTML = '';
         this.sessions.forEach(s => {
-            const el = document.createElement('div');
-            el.className = `session-item ${s.id === this.currentSessionId ? 'active' : ''}`;
-            el.innerHTML = `
-                <div style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-                    💬 ${s.title}
-                </div>
+            const item = document.createElement('div');
+            item.className = `session-item ${s.id === this.currentSessionId ? 'active' : ''}`;
+            item.innerHTML = `
+                <span style="overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;">💬 ${s.title}</span>
                 <button onclick="event.stopPropagation(); window.singleChat.deleteSession('${s.id}')" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:11px;">✕</button>
             `;
-            el.onclick = () => this.switchSession(s.id);
-            this.sessionListEl.appendChild(el);
+            item.onclick = () => this.switchSession(s.id);
+            this.sessionListContainer.appendChild(item);
         });
     }
 
     deleteSession(id) {
         this.sessions = this.sessions.filter(s => s.id !== id);
         this.saveSessions();
-        if (this.sessions.length === 0) {
-            this.createNewSession();
-        } else if (this.currentSessionId === id) {
+        if (this.currentSessionId === id && this.sessions.length > 0) {
             this.switchSession(this.sessions[0].id);
+        } else if (this.sessions.length === 0) {
+            this.createNewSession();
+        } else {
+            this.renderSessionList();
         }
-        this.renderSessionList();
     }
 
     renderMessages() {
-        if (!this.chatMessagesEl) return;
-        this.chatMessagesEl.innerHTML = '';
-        
-        if (this.messages.length === 0) {
-            this.chatMessagesEl.innerHTML = `
-                <div class="agent-msg-card" style="margin: auto; max-width: 450px; text-align: center; background: rgba(255,255,255,0.03);">
-                    <div style="font-size: 32px; margin-bottom: 10px;">💬</div>
-                    <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px;">1:1 로컬 LLM 플레이그라운드</div>
-                    <div style="font-size: 12px; color: var(--text-muted);">
-                        LM Studio 로컬 모델과 1:1로 빠르게 대화하고 실시간 생성 속도(t/s)를 측정할 수 있습니다.
-                    </div>
-                </div>
-            `;
-            return;
-        }
+        if (!this.messagesContainer) return;
+        this.messagesContainer.innerHTML = '';
+        const session = this.getCurrentSession();
+        if (!session) return;
 
-        this.messages.forEach(m => {
+        session.messages.forEach(msg => {
             const card = document.createElement('div');
             card.className = 'agent-msg-card';
-            const isUser = m.role === 'user';
-            if (isUser) {
-                card.style.background = 'rgba(99, 102, 241, 0.08)';
-                card.style.borderColor = 'rgba(99, 102, 241, 0.3)';
-            }
+            const isUser = msg.role === 'user';
             card.innerHTML = `
                 <div class="agent-msg-header">
                     <div class="agent-info">
-                        <span>${isUser ? '👤 사용자' : '🤖 로컬 LLM'}</span>
+                        <span>${isUser ? '👤' : '🤖'}</span>
+                        <span>${isUser ? '나 (User)' : 'Local LLM'}</span>
                     </div>
+                    <span class="node-role-badge">${isUser ? '사용자' : '어시스턴트'}</span>
                 </div>
-                <div class="msg-content">${this.renderMarkdown(m.content)}</div>
+                <div class="msg-content">${msg.content}</div>
             `;
-            this.chatMessagesEl.appendChild(card);
+            this.messagesContainer.appendChild(card);
         });
         this.scrollToBottom();
     }
 
-    async sendMessage() {
-        const text = this.inputEl.value.trim();
-        if (!text || this.isStreaming) return;
+    scrollToBottom() {
+        if (this.messagesContainer) {
+            this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        }
+    }
 
-        this.inputEl.value = '';
-        this.messages.push({ role: 'user', content: text });
-        
-        // 세션 제목 자동 업데이트
-        const currentSession = this.sessions.find(s => s.id === this.currentSessionId);
-        if (currentSession && currentSession.title === "새로운 대화") {
-            currentSession.title = text.slice(0, 20);
+    stopGeneration() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.setStreamingState(false);
+        this.saveSessions();
+    }
+
+    setStreamingState(streaming) {
+        this.isStreaming = streaming;
+        if (this.sendBtn) this.sendBtn.style.display = streaming ? 'none' : 'flex';
+        if (this.stopBtn) this.stopBtn.style.display = streaming ? 'flex' : 'none';
+        if (this.inputArea) this.inputArea.disabled = streaming;
+    }
+
+    async sendMessage() {
+        if (this.isStreaming || !this.inputArea) return;
+        const text = this.inputArea.value.trim();
+        if (!text) return;
+
+        const session = this.getCurrentSession();
+        if (!session) return;
+
+        // 첫 질문일 경우 세션 타이틀 업데이트
+        if (session.messages.length <= 1) {
+            session.title = text.slice(0, 18) + '...';
             this.renderSessionList();
         }
 
+        session.messages.push({ role: "user", content: text });
+        this.inputArea.value = '';
         this.renderMessages();
 
-        const model = document.getElementById('modelSelect').value;
-        const systemPrompt = this.presetSelect ? this.presetSelect.value : "";
-        const useRag = document.getElementById('singleRagToggle')?.checked || false;
-
-        // 어시스턴트 카드 생성
-        const assistantCard = document.createElement('div');
-        assistantCard.className = 'agent-msg-card';
-        assistantCard.innerHTML = `
+        // 어시스턴트 빈 메시지 카드 추가
+        const card = document.createElement('div');
+        card.className = 'agent-msg-card';
+        card.innerHTML = `
             <div class="agent-msg-header">
-                <div class="agent-info"><span>🤖 로컬 LLM</span></div>
-                <span class="node-role-badge" id="liveSpeed">0.0 t/s</span>
+                <div class="agent-info"><span>🤖</span><span>Local LLM</span></div>
+                <span class="node-role-badge">생성 중...</span>
             </div>
-            <div class="msg-content" id="liveReply"></div>
+            <div class="msg-content" id="singleCurrentStream"></div>
         `;
-        this.chatMessagesEl.appendChild(assistantCard);
+        this.messagesContainer.appendChild(card);
         this.scrollToBottom();
 
-        const replyTarget = assistantCard.querySelector('#liveReply');
-        const speedTarget = assistantCard.querySelector('#liveSpeed');
+        const streamTarget = document.getElementById('singleCurrentStream');
         let fullReply = '';
-        this.isStreaming = true;
-        this.sendBtn.disabled = true;
+        this.setStreamingState(true);
+        this.abortController = new AbortController();
 
         try {
-            const response = await fetch('/api/single-chat/stream', {
+            const systemPrompt = this.presetSelect ? this.presetSelect.value : "";
+            const useRag = this.ragToggle ? this.ragToggle.checked : false;
+
+            const res = await fetch('/api/single-chat/stream', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                signal: this.abortController.signal,
                 body: JSON.stringify({
-                    messages: this.messages,
-                    model: model,
+                    messages: session.messages.filter(m => m.role !== 'system'),
                     system_prompt: systemPrompt,
                     use_rag: useRag,
                     auto_learn: true
                 })
             });
 
-            const reader = response.body.getReader();
+            const reader = res.body.getReader();
             const decoder = new TextDecoder('utf-8');
             let buffer = '';
 
             while (true) {
-                const { value, done } = await reader.read();
+                const { done, value } = await reader.read();
                 if (done) break;
-
                 buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n\n');
-                buffer = lines.pop();
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
 
                 for (const line of lines) {
                     if (line.startsWith('data: ')) {
-                        const raw = line.slice(6).trim();
-                        if (raw === '[DONE]') break;
+                        const dataStr = line.replace('data: ', '').trim();
+                        if (dataStr === '[DONE]') continue;
                         try {
-                            const data = JSON.parse(raw);
-                            if (data.delta) {
+                            const data = JSON.parse(dataStr);
+                            if (data.type === 'token') {
                                 fullReply += data.delta;
-                                replyTarget.innerHTML = this.renderMarkdown(fullReply);
-                                if (data.tps && speedTarget) {
-                                    speedTarget.innerText = `⚡ ${data.tps} t/s (${data.elapsed}s)`;
+                                if (streamTarget) streamTarget.innerText = fullReply;
+                                if (this.tpsBadge && data.tps) {
+                                    this.tpsBadge.innerText = `⚡ ${data.tps} t/s (${data.elapsed}s)`;
                                 }
                                 this.scrollToBottom();
                             }
@@ -221,41 +230,22 @@ class SingleChatManager {
                 }
             }
 
-            this.messages.push({ role: 'assistant', content: fullReply });
-            if (currentSession) {
-                currentSession.messages = this.messages;
+            session.messages.push({ role: "assistant", content: fullReply });
+            this.saveSessions();
+            if (window.brainVisualizer) window.brainVisualizer.loadGraph();
+        } catch (e) {
+            if (e.name === 'AbortError') {
+                if (streamTarget) streamTarget.innerText = fullReply + "\n\n[⏹️ 사용자에 의해 생성이 중단되었습니다]";
+                session.messages.push({ role: "assistant", content: fullReply });
                 this.saveSessions();
+            } else {
+                if (streamTarget) streamTarget.innerText = `오류 발생: ${e.message}`;
             }
-
-            // 3D 브레인 비주얼라이저에 새 지식 펄스 전달
-            if (window.brainVisualizer) {
-                window.brainVisualizer.pulseRandomNeuron();
-            }
-
-        } catch (err) {
-            replyTarget.innerHTML = `<span style="color:#EF4444;">오류 발생: ${err.message}</span>`;
         } finally {
-            this.isStreaming = false;
-            this.sendBtn.disabled = false;
-        }
-    }
-
-    renderMarkdown(text) {
-        let escaped = text.replace(/[&<>'"]/g, 
-            tag => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', "'": '&#39;', '"': '&quot;' }[tag] || tag)
-        );
-        // 코드 블록 변환
-        escaped = escaped.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (match, lang, code) => {
-            return `<pre><div style="display:flex; justify-content:space-between; color:#94A3B8; font-size:11px; margin-bottom:4px;"><span>${lang || 'code'}</span><button onclick="navigator.clipboard.writeText(this.parentElement.nextElementSibling.innerText); alert('복사됨!');" style="background:transparent; border:none; color:#38BDF8; cursor:pointer;">복사</button></div><code>${code}</code></pre>`;
-        });
-        return escaped;
-    }
-
-    scrollToBottom() {
-        if (this.chatMessagesEl) {
-            this.chatMessagesEl.scrollTop = this.chatMessagesEl.scrollHeight;
+            this.setStreamingState(false);
+            this.abortController = null;
         }
     }
 }
 
-window.singleChat = new SingleChatManager();
+window.singleChat = new SingleChat();
