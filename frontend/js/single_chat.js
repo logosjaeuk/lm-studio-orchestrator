@@ -187,6 +187,7 @@ class SingleChat {
         try {
             const systemPrompt = this.presetSelect ? this.presetSelect.value : "";
             const useRag = this.ragToggle ? this.ragToggle.checked : false;
+            const selectedModel = document.getElementById('modelSelect')?.value || "default";
 
             const res = await fetch('/api/single-chat/stream', {
                 method: 'POST',
@@ -194,6 +195,7 @@ class SingleChat {
                 signal: this.abortController.signal,
                 body: JSON.stringify({
                     messages: session.messages.filter(m => m.role !== 'system'),
+                    model: selectedModel,
                     system_prompt: systemPrompt,
                     use_rag: useRag,
                     auto_learn: true
