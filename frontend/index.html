@@ -3,17 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LM Studio Orchestrator & Autonomous Brain Studio v3.0</title>
+    <title>LM Studio Orchestrator & Autonomous Brain Studio v4.0</title>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <!-- 왼쪽 사이드바 -->
     <aside class="sidebar">
         <div class="brand-header">
-            <div class="brand-logo">🧠</div>
+            <div class="brand-logo">🏢</div>
             <div class="brand-text">
                 <h1>LM Brain Studio</h1>
-                <p>Autonomous AI Studio v3.0</p>
+                <p>Universal Org Engine v4.0</p>
             </div>
         </div>
 
@@ -28,9 +28,17 @@
 
         <!-- 메인 네비게이션 탭 -->
         <nav class="nav-menu">
-            <div class="nav-item active" onclick="switchView('singleChatView')">
+            <div class="nav-item active" onclick="switchView('orgOrchestratorView')">
+                <span class="nav-icon">🏢</span>
+                <span>조직 오케스트레이터</span>
+            </div>
+            <div class="nav-item" onclick="switchView('singleChatView')">
                 <span class="nav-icon">💬</span>
                 <span>1:1 싱글 챗</span>
+            </div>
+            <div class="nav-item" onclick="switchView('canvasView')">
+                <span class="nav-icon">🕸️</span>
+                <span>조직도 캔버스</span>
             </div>
             <div class="nav-item" onclick="switchView('brainView')">
                 <span class="nav-icon">🧠</span>
@@ -40,10 +48,6 @@
                 <span class="nav-icon">🧬</span>
                 <span>자가 학습 메모리</span>
             </div>
-            <div class="nav-item" onclick="switchView('canvasView')">
-                <span class="nav-icon">🕸️</span>
-                <span>에이전트 캔버스</span>
-            </div>
             <div class="nav-item" onclick="switchView('providerView')">
                 <span class="nav-icon">🤖</span>
                 <span>LLM 프로바이더</span>
@@ -51,10 +55,6 @@
             <div class="nav-item" onclick="switchView('mcpView')">
                 <span class="nav-icon">🔌</span>
                 <span>MCP 도구 매니저</span>
-            </div>
-            <div class="nav-item" onclick="switchView('chatView')">
-                <span class="nav-icon">👥</span>
-                <span>멀티 에이전트 릴레이</span>
             </div>
             <div class="nav-item" onclick="switchView('ragView')">
                 <span class="nav-icon">📚</span>
@@ -78,8 +78,66 @@
     <!-- 메인 컨텐츠 영역 -->
     <main class="main-content">
 
-        <!-- 1. 1:1 싱글 챗 플레이그라운드 뷰 (Issue #1, #6) -->
-        <section id="singleChatView" class="view-section active">
+        <!-- 1. 범용 계층형 조직 오케스트레이터 뷰 (Issue #13 - Core) -->
+        <section id="orgOrchestratorView" class="view-section active">
+            <header class="top-header">
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <div class="page-title">🏢 범용 조직 오케스트레이터</div>
+                    <select id="orgTemplateSelect" class="custom-select" style="width: 220px; font-weight: 700; color: #38bdf8;" onchange="window.orgOrchestrator.changeOrg(this.value)">
+                        <option value="youtube_studio">🎬 유튜브 크리에이터 스튜디오</option>
+                        <option value="publishing_house">📚 출판사 & 에디토리얼 하우스</option>
+                        <option value="tech_startup">💻 IT 소프트웨어 랩</option>
+                    </select>
+                </div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="document.getElementById('orgMessagesList').innerHTML = '';">🗑️ 기록 비우기</button>
+                </div>
+            </header>
+
+            <div class="chat-workspace" style="max-width: 1000px;">
+                <!-- 조직 구조 미리보기 카드 -->
+                <div style="background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 10px; padding: 12px 16px; margin-bottom: 12px;">
+                    <div id="orgDescText" style="font-size: 11px; color: var(--text-muted); margin-bottom: 10px;"></div>
+                    <div id="orgStructureView"></div>
+                </div>
+
+                <!-- 실시간 메시지 목록 -->
+                <div class="messages-list" id="orgMessagesList">
+                    <div class="agent-msg-card">
+                        <div class="agent-msg-header">
+                            <div class="agent-info"><span>🏢</span><span>조직 오케스트레이션 시스템</span></div>
+                            <span class="node-role-badge">시스템 안내</span>
+                        </div>
+                        <div class="msg-content">
+                            원하는 명령을 내리시면 <strong>[최상위 조직 관리자]</strong>가 지시사항을 분석하여 부서별 최적의 인원에게 업무를 나누고 최종 완성본을 감수하여 보고합니다.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 입력 바 -->
+                <div class="input-bar-container">
+                    <textarea id="orgPromptInput" class="prompt-textarea" placeholder="조직에게 내릴 총괄 명령을 입력하세요... (예: '2026 AI 트렌드 유튜브 영상 기획해줘', '성공적인 스타트업 도서 목차와 서문 써줘')" onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault(); window.orgOrchestrator.startOrchestration();}"></textarea>
+                    <div class="input-options-bar">
+                        <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; cursor: pointer;">
+                            <input type="checkbox" id="orgRagToggle">
+                            <span>📚 RAG 사내 지식 문서 참조</span>
+                        </label>
+                        <div style="display: flex; gap: 8px;">
+                            <button id="orgStopBtn" class="btn-secondary" style="display: none; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #EF4444;" onclick="window.orgOrchestrator.stopOrchestration()">
+                                <span>⏹️ 조직 작업 중지</span>
+                            </button>
+                            <button id="orgSendBtn" class="btn-primary" onclick="window.orgOrchestrator.startOrchestration()">
+                                <span>총괄 지시 전달</span>
+                                <span>➔</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2. 1:1 싱글 챗 플레이그라운드 뷰 -->
+        <section id="singleChatView" class="view-section">
             <header class="top-header">
                 <div class="page-title">💬 1:1 싱글 챗 플레이그라운드</div>
                 <div class="header-actions">
@@ -122,7 +180,7 @@
             </div>
         </section>
 
-        <!-- 2. 3D 인터랙티브 뉴런 브레인 지식 그래프 뷰 (Issue #3) -->
+        <!-- 3. 3D 인터랙티브 뉴런 브레인 지식 그래프 뷰 -->
         <section id="brainView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🧠 3D 인터랙티브 뉴런 브레인 지식 그래프</div>
@@ -140,7 +198,7 @@
             </div>
         </section>
 
-        <!-- 3. 지속적 자가 학습 메모리 큐 뷰 (Issue #2) -->
+        <!-- 4. 지속적 자가 학습 메모리 큐 뷰 -->
         <section id="selfLearningView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🧬 지속적 자가 학습 메모리 큐</div>
@@ -158,14 +216,15 @@
             </div>
         </section>
 
-        <!-- 4. 비주얼 에이전트 워크플로우 캔버스 뷰 (Issue #4, #8, #9: 실시간 펄스 실행) -->
+        <!-- 5. 비주얼 에이전트 워크플로우 캔버스 뷰 -->
         <section id="canvasView" class="view-section">
             <header class="top-header">
-                <div class="page-title">🕸️ 노드 기반 에이전트 & 도구 워크플로우 캔버스</div>
+                <div class="page-title">🕸️ 노드 기반 조직도 & 도구 워크플로우 캔버스</div>
                 <div class="header-actions">
-                    <select id="canvasTemplateSelect" class="custom-select" style="width: 170px; padding: 5px 8px; font-size: 11px;" onchange="window.workflowCanvas.loadTemplate(this.value)">
-                        <option value="fullstack">🚀 풀스택 파이프라인</option>
-                        <option value="rag_qa">🔍 RAG Q&A 검증망</option>
+                    <select id="canvasTemplateSelect" class="custom-select" style="width: 200px; padding: 5px 8px; font-size: 11px;" onchange="window.workflowCanvas.loadTemplate(this.value)">
+                        <option value="youtube_org">🎬 유튜브 스튜디오 조직도</option>
+                        <option value="publishing_org">📚 출판사 조직도</option>
+                        <option value="fullstack">🚀 IT 풀스택 랩</option>
                         <option value="python_runner">🐍 파이썬 샌드박스 실행</option>
                     </select>
                     <div style="display: flex; gap: 4px;">
@@ -183,7 +242,7 @@
             </div>
         </section>
 
-        <!-- 5. 멀티 LLM 프로바이더 뷰 (Issue #11) -->
+        <!-- 6. 멀티 LLM 프로바이더 뷰 -->
         <section id="providerView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🤖 멀티 LLM 프로바이더 스위처</div>
@@ -199,7 +258,7 @@
             </div>
         </section>
 
-        <!-- 6. MCP 도구 매니저 뷰 (Issue #10) -->
+        <!-- 7. MCP 도구 매니저 뷰 -->
         <section id="mcpView" class="view-section">
             <header class="top-header">
                 <div class="page-title">🔌 MCP (Model Context Protocol) 도구 & 서버 매니저</div>
@@ -220,54 +279,7 @@
             </div>
         </section>
 
-        <!-- 7. 멀티 에이전트 릴레이 / 토론 채팅 뷰 -->
-        <section id="chatView" class="view-section">
-            <header class="top-header">
-                <div class="page-title">👥 멀티 에이전트 실시간 오케스트레이터</div>
-                <div class="header-actions">
-                    <button class="btn-secondary" onclick="clearChat()">🗑️ 대화 초기화</button>
-                    <button class="btn-secondary" onclick="exportToDataset()">📥 데이터셋으로 저장</button>
-                </div>
-            </header>
-            <div class="chat-workspace">
-                <div class="messages-list" id="messagesList">
-                    <div class="agent-msg-card">
-                        <div class="agent-msg-header">
-                            <div class="agent-info"><span>🤖</span><span>LM Studio Orchestrator</span></div>
-                            <span class="node-role-badge">시스템</span>
-                        </div>
-                        <div class="msg-content">
-                            안녕하세요! 캔버스에서 구성한 독립 MCP 도구와 파라미터가 각 에이전트에게 자동으로 적용됩니다.
-                        </div>
-                    </div>
-                </div>
-
-                <div class="input-bar-container">
-                    <textarea id="promptInput" class="prompt-textarea" placeholder="에이전트 팀에게 지시할 프로젝트 과업 또는 토론 주제를 입력하세요..."></textarea>
-                    <div class="input-options-bar">
-                        <div class="mode-pills">
-                            <span class="pill-option active" id="modeSeq" onclick="setMode('sequential')">🔗 순차 릴레이</span>
-                            <span class="pill-option" id="modeDebate" onclick="setMode('debate')">⚔️ 토론 아레나</span>
-                            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; margin-left: 10px; cursor: pointer;">
-                                <input type="checkbox" id="ragToggle">
-                                <span>📚 RAG 문서 참조</span>
-                            </label>
-                        </div>
-                        <div style="display: flex; gap: 8px;">
-                            <button id="stopOrchestrateBtn" class="btn-secondary" style="display: none; background: rgba(239, 68, 68, 0.2); border-color: rgba(239, 68, 68, 0.5); color: #EF4444;" onclick="stopOrchestration()">
-                                <span>⏹️ 오케스트레이션 중지</span>
-                            </button>
-                            <button id="sendBtn" class="btn-primary" onclick="startOrchestration()">
-                                <span>실행</span>
-                                <span>➔</span>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- 8. 로컬 문서 RAG 지식베이스 뷰 (Issue #12) -->
+        <!-- 8. 로컬 문서 RAG 지식베이스 뷰 -->
         <section id="ragView" class="view-section">
             <header class="top-header">
                 <div class="page-title">📚 로컬 문서 시맨틱 RAG 지식베이스 매니저</div>
@@ -279,7 +291,7 @@
                 <div class="rag-sidebar">
                     <div class="dropzone" id="ragDropzone" onclick="document.getElementById('fileInput').click()">
                         <div style="font-size: 28px; margin-bottom: 8px;">📄</div>
-                        <div style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">문서 파일 업로드</div>
+                        <div style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">사내 문서 파일 업로드</div>
                         <div style="font-size: 11px; color: var(--text-muted);">TXT, Markdown, Code, JSON 파일 드래그</div>
                         <input type="file" id="fileInput" style="display: none;" onchange="handleFileUpload(event)">
                     </div>
@@ -380,7 +392,7 @@
     <script src="js/canvas.js"></script>
     <script src="js/provider.js"></script>
     <script src="js/mcp.js"></script>
-    <script src="js/chat.js"></script>
+    <script src="js/org_orchestrator.js"></script>
     <script src="js/rag.js"></script>
     <script src="js/app.js"></script>
 </body>
