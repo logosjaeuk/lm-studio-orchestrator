@@ -232,7 +232,7 @@ body {
 
 .header-actions {
     display: flex;
-    gap: 10px;
+    gap: 8px;
     align-items: center;
 }
 
@@ -327,7 +327,7 @@ body {
     border: 1px solid var(--border-active);
 }
 
-/* 2. 비주얼 캔버스 & 3D 브레인 뷰 */
+/* 2. 비주얼 캔버스 & 노드 스타일 */
 .canvas-container {
     flex: 1;
     position: relative;
@@ -355,37 +355,72 @@ body {
 
 .agent-node {
     position: absolute;
-    width: 220px;
-    background: var(--bg-card);
+    width: 240px;
+    background: rgba(22, 28, 42, 0.85);
     border: 1px solid var(--border-color);
     border-radius: 12px;
-    padding: 14px;
+    padding: 12px 14px;
     backdrop-filter: blur(16px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
     cursor: grab;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.agent-node:hover {
+    border-color: rgba(99, 102, 241, 0.6);
+    box-shadow: 0 10px 30px rgba(99, 102, 241, 0.2);
+}
+
+/* 노드 타입별 테마 */
+.agent-node.node-type-python {
+    border-left: 3px solid #10B981;
+}
+.agent-node.node-type-rag {
+    border-left: 3px solid #06B6D4;
+}
+.agent-node.node-type-output {
+    border-left: 3px solid #F59E0B;
+}
+.agent-node.node-type-agent {
+    border-left: 3px solid #6366F1;
 }
 
 .node-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 10px;
-    padding-bottom: 8px;
+    margin-bottom: 8px;
+    padding-bottom: 6px;
     border-bottom: 1px solid var(--border-color);
 }
 
 .node-title {
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
 }
 
 .node-role-badge {
     font-size: 10px;
-    padding: 3px 8px;
+    padding: 2px 6px;
     border-radius: 12px;
     background: rgba(99, 102, 241, 0.15);
     color: var(--primary);
     font-weight: 600;
+}
+
+.node-input {
+    background: rgba(10, 15, 25, 0.7);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px;
+    color: var(--text-main);
+    font-family: inherit;
+    outline: none;
+    resize: none;
+}
+
+.node-input:focus {
+    border-color: var(--primary);
 }
 
 /* 3. 대화창 공통 */

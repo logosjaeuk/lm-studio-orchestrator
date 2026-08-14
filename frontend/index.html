@@ -80,7 +80,6 @@
                 </div>
             </header>
             <div class="single-chat-layout">
-                <!-- 세션 히스토리 바 -->
                 <div class="session-sidebar">
                     <div style="font-size: 11px; font-weight: 700; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px;">대화 목록</div>
                     <div class="session-list" id="chatSessionList"></div>
@@ -90,7 +89,6 @@
                     </div>
                 </div>
 
-                <!-- 메인 대화창 -->
                 <div class="chat-workspace" style="max-width: 100%;">
                     <div class="messages-list" id="singleChatMessages"></div>
 
@@ -147,13 +145,24 @@
             </div>
         </section>
 
-        <!-- 4. 비주얼 에이전트 워크플로우 캔버스 뷰 -->
+        <!-- 4. 비주얼 에이전트 워크플로우 캔버스 뷰 (대폭 강화된 툴바 & 노드 팔레트) -->
         <section id="canvasView" class="view-section">
             <header class="top-header">
-                <div class="page-title">🕸️ 노드 기반 에이전트 워크플로우 캔버스</div>
+                <div class="page-title">🕸️ 노드 기반 에이전트 & 도구 워크플로우 캔버스</div>
                 <div class="header-actions">
-                    <button class="btn-secondary" onclick="addAgentNode()">➕ 에이전트 추가</button>
-                    <button class="btn-secondary" onclick="resetCanvas()">🔄 템플릿 초기화</button>
+                    <!-- 템플릿 로드 선택 -->
+                    <select id="canvasTemplateSelect" class="custom-select" style="width: 170px; padding: 5px 8px; font-size: 11px;" onchange="window.workflowCanvas.loadTemplate(this.value)">
+                        <option value="fullstack">🚀 풀스택 파이프라인</option>
+                        <option value="rag_qa">🔍 RAG Q&A 검증망</option>
+                        <option value="python_runner">🐍 파이썬 샌드박스 실행</option>
+                    </select>
+                    <!-- 노드 추가 팔레트 -->
+                    <div style="display: flex; gap: 4px;">
+                        <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('agent')">➕ Agent</button>
+                        <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('python')">➕ Python</button>
+                        <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('rag')">➕ RAG</button>
+                        <button class="btn-secondary" style="padding: 5px 8px; font-size: 11px;" onclick="window.workflowCanvas.addCustomNode('output')">➕ Output</button>
+                    </div>
                     <button class="btn-primary" onclick="runCanvasWorkflow()">▶ 워크플로우 실행</button>
                 </div>
             </header>
