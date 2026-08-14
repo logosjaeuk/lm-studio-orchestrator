@@ -1,8 +1,9 @@
 import os
 import json
+import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
@@ -11,8 +12,9 @@ from .lm_client import lm_client
 from .rag_engine import rag_engine
 from .dataset_builder import dataset_builder
 from .orchestrator import orchestrator_engine
+from .brain_memory import brain_engine
 
-app = FastAPI(title="LM Studio Orchestrator API", version="1.0.0")
+app = FastAPI(title="LM Studio Orchestrator API", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -22,13 +24,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+class SingleChatRequest(BaseModel):
+    messages: List[Dict[str, str]]
+    model: str = "default"
+    system_prompt: Optional[str] = "당신은 지능적이고 친절한 AI 어시스턴트입니다."
+    temperature: float = 0.7
+    max_tokens: int = 2048
+    use_rag: bool = False
+    auto_learn: bool = True
+
 class PipelineRequest(BaseModel):
-    mode: str = "sequential" # "sequential" or "debate"
+    mode: str = "sequential"
     user_input: str
     agents: List[Dict[str, Any]] = []
     use_rag: bool = False
     model: str = "default"
     debate_rounds: Optional[int] = 2
+
+class AddMemoryRequest(BaseModel):
+    title: str
+    content: str
+    category: str = "general"
+    importance: float = 0.8
 
 class AddDatasetRequest(BaseModel):
     instruction: str
@@ -46,9 +63,91 @@ async def get_health():
     """LM Studio 헬스체크 및 모델 목록 조회"""
     return await lm_client.check_health()
 
+# ==========================================
+# 1. 1:1 싱글 챗 플레이그라운드 API (Issue #1)
+# ==========================================
+@app.get("/api/presets")
+async def get_presets():
+    """시스템 프롬프트 프리셋 목록"""
+    return [
+        {"id": "general", "name": "🤖 범용 AI 비서", "prompt": "당신은 사용자의 질문에 정확하고 명료하게 답하는 지능형 어시스턴트입니다."},
+        {"id": "coder", "name": "💻 수석 소프트웨어 엔지니어", "prompt": "당신은 최고 수준의 시니어 풀스택 개발자입니다. 견고하고 최적화된 코드와 명확한 주석을 작성하세요."},
+        {"id": "tutor", "name": "🎓 친절한 1:1 튜터", "prompt": "당신은 복잡한 개념을 쉬운 비유와 실생활 예시로 친절하게 설명하는 최고의 교육자입니다."},
+        {"id": "architect", "name": "🏛️ 시스템 아키텍트", "prompt": "당신은 대규모 분산 시스템 설계와 확장성, 보안을 책임지는 수석 아키텍트입니다."}
+    ]
+
+@app.post("/api/single-chat/stream")
+async def single_chat_stream(req: SingleChatRequest):
+    """1:1 싱글 챗 SSE 스트리밍 & 실시간 토큰/초(t/s) 측정"""
+    async def event_generator():
+        msgs = req.messages.copy()
+        
+        # RAG 맥락 주입
+        last_user_msg = next((m["content"] for m in reversed(msgs) if m["role"] == "user"), "")
+        rag_context = ""
+        if req.use_rag and last_user_msg:
+            rag_context = rag_engine.get_augmented_context(last_user_msg, top_k=2)
+
+        sys_content = req.system_prompt or "당신은 유능한 AI 어시스턴트입니다."
+        if rag_context:
+            sys_content += f"\n\n{rag_context}"
+
+        full_msgs = [{"role": "system", "content": sys_content}] + msgs
+
+        start_time = time.time()
+        token_count = 0
+        full_response = ""
+
+        async for chunk in lm_client.chat_stream(full_msgs, model=req.model, temperature=req.temperature, max_tokens=req.max_tokens):
+            token_count += 1
+            full_response += chunk
+            elapsed = max(0.001, time.time() - start_time)
+            tps = round(token_count / elapsed, 1)
+
+            payload = {
+                "type": "token",
+                "delta": chunk,
+                "token_count": token_count,
+                "tps": tps,
+                "elapsed": round(elapsed, 2)
+            }
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+        # 자가 학습 큐에 자동 적재 (Issue #2)
+        if req.auto_learn and len(last_user_msg) > 8 and len(full_response) > 20:
+            brain_engine.add_memory(
+                title=last_user_msg[:30] + "...",
+                content=f"Q: {last_user_msg}\nA: {full_response[:200]}...",
+                category="llm",
+                importance=0.85
+            )
+
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+# ==========================================
+# 2. 3D 브레인 지식 그래프 & 자가 학습 API (Issue #2, #3)
+# ==========================================
+@app.get("/api/brain/graph")
+async def get_brain_graph():
+    """3D 브레인 뉴런 노드 및 시냅스 링크 그래프"""
+    return brain_engine.get_3d_brain_graph()
+
+@app.post("/api/brain/memory")
+async def add_brain_memory(req: AddMemoryRequest):
+    mem = brain_engine.add_memory(req.title, req.content, req.category, req.importance)
+    return {"status": "success", "memory": mem}
+
+@app.post("/api/brain/consolidate")
+async def consolidate_brain_memory():
+    return brain_engine.auto_consolidate()
+
+# ==========================================
+# 3. 멀티 에이전트 오케스트레이션 API
+# ==========================================
 @app.post("/api/orchestrate/stream")
 async def orchestrate_stream(req: PipelineRequest):
-    """멀티 에이전트 파이프라인 SSE 스트리밍 실행"""
     async def event_generator():
         if req.mode == "debate":
             agent_a = req.agents[0] if len(req.agents) > 0 else {"name": "Proponent", "role": "찬성/기획자", "system_prompt": "당신은 혁신적인 아이디어를 적극 제안하는 기획자입니다."}
@@ -70,7 +169,9 @@ async def orchestrate_stream(req: PipelineRequest):
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-# RAG API
+# ==========================================
+# 4. RAG 및 파인튜닝 데이터셋 API
+# ==========================================
 @app.get("/api/rag/stats")
 async def get_rag_stats():
     return rag_engine.get_stats()
@@ -81,6 +182,13 @@ async def upload_rag_document(file: UploadFile = File(...)):
         content = await file.read()
         text = content.decode("utf-8", errors="ignore")
         chunk_count = rag_engine.add_document_text(file.filename, text, save_disk=True)
+        # 3D 브레인 메모리에도 뉴런으로 자동 연동
+        brain_engine.add_memory(
+            title=f"Doc: {file.filename}",
+            content=text[:180] + "...",
+            category="rag",
+            importance=0.9
+        )
         return {"status": "success", "filename": file.filename, "chunks_added": chunk_count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -95,7 +203,6 @@ async def clear_rag():
     rag_engine.clear_all()
     return {"status": "cleared"}
 
-# Dataset & LoRA API
 @app.post("/api/dataset/add")
 async def add_dataset_entry(entry: AddDatasetRequest):
     dataset_builder.add_entry(entry.instruction, entry.output, entry.context_input or "")
