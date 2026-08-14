@@ -1,4 +1,4 @@
-// 차세대 노드 기반 비주얼 에이전트 & 도구 워크플로우 캔버스 엔진 (Issue #4, #7, #8)
+// 차세대 노드 기반 비주얼 에이전트 & 도구 워크플로우 캔버스 엔진 (Issue #4, #7, #8, #9)
 class WorkflowCanvas {
     constructor() {
         this.container = document.getElementById('canvasContainer');
@@ -8,13 +8,17 @@ class WorkflowCanvas {
         this.ctx = this.canvas.getContext('2d');
 
         this.nodes = [];
-        this.connections = []; // [{from: id, to: id}]
-        this.zoom = 1.0;
+        this.connections = [];
         this.draggingNode = null;
         this.dragOffset = { x: 0, y: 0 };
         this.editingNodeId = null;
 
+        // 파티클 펄스 애니메이션 상태
+        this.pulses = []; // [{from: id, to: id, progress: 0.0}]
+        this.isExecuting = false;
+
         this.init();
+        this.startPulseAnimation();
     }
 
     init() {
@@ -29,6 +33,20 @@ class WorkflowCanvas {
         this.canvas.width = this.container.clientWidth;
         this.canvas.height = this.container.clientHeight;
         this.renderLines();
+    }
+
+    startPulseAnimation() {
+        const loop = () => {
+            if (this.pulses.length > 0) {
+                this.pulses.forEach(p => {
+                    p.progress += 0.04;
+                });
+                this.pulses = this.pulses.filter(p => p.progress <= 1.0);
+                this.renderLines();
+            }
+            requestAnimationFrame(loop);
+        };
+        requestAnimationFrame(loop);
     }
 
     // ==========================================
@@ -46,6 +64,7 @@ class WorkflowCanvas {
                     model: "default",
                     temperature: 0.7,
                     tools: ["web_search"],
+                    status: "idle",
                     x: 60,
                     y: 100
                 },
@@ -58,6 +77,7 @@ class WorkflowCanvas {
                     model: "default",
                     temperature: 0.3,
                     tools: ["calc_math"],
+                    status: "idle",
                     x: 380,
                     y: 100
                 },
@@ -70,6 +90,7 @@ class WorkflowCanvas {
                     model: "default",
                     temperature: 0.5,
                     tools: [],
+                    status: "idle",
                     x: 700,
                     y: 100
                 }
@@ -86,6 +107,7 @@ class WorkflowCanvas {
                     name: "📚 로컬 RAG 검색기",
                     role: "지식베이스 질의",
                     query: "최근 프로젝트 아키텍처 문서 검색",
+                    status: "idle",
                     x: 60,
                     y: 120
                 },
@@ -98,6 +120,7 @@ class WorkflowCanvas {
                     model: "default",
                     temperature: 0.5,
                     tools: ["web_search"],
+                    status: "idle",
                     x: 380,
                     y: 120
                 },
@@ -110,6 +133,7 @@ class WorkflowCanvas {
                     model: "default",
                     temperature: 0.2,
                     tools: [],
+                    status: "idle",
                     x: 700,
                     y: 120
                 }
@@ -129,6 +153,7 @@ class WorkflowCanvas {
                     model: "default",
                     temperature: 0.3,
                     tools: ["calc_math"],
+                    status: "idle",
                     x: 60,
                     y: 100
                 },
@@ -138,6 +163,7 @@ class WorkflowCanvas {
                     name: "⚡ 파이썬 실행 샌드박스",
                     role: "실시간 로컬 실행기",
                     code: "import math\n\ndef get_primes(n):\n    primes = []\n    for i in range(2, n + 1):\n        if all(i % p != 0 for p in primes):\n            primes.append(i)\n    return primes\n\nprint('계산된 소수 목록:', get_primes(30))\nprint('완료!')",
+                    status: "idle",
                     x: 400,
                     y: 80
                 },
@@ -147,6 +173,7 @@ class WorkflowCanvas {
                     name: "💾 결과 리포트 내보내기",
                     role: "파일 자동 저장",
                     filename: "result_output.txt",
+                    status: "idle",
                     x: 780,
                     y: 120
                 }
@@ -160,6 +187,79 @@ class WorkflowCanvas {
     }
 
     // ==========================================
+    // 캔버스 실시간 파이프라인 실행 (Issue #9)
+    // ==========================================
+    async runLivePipeline() {
+        if (this.isExecuting) return;
+        const task = prompt("에이전트 캔버스 파이프라인에 전달할 과업을 입력하세요:", "로컬 대시보드 구조 설계 및 알고리즘 구현");
+        if (!task) return;
+
+        this.isExecuting = true;
+        this.nodes.forEach(n => n.status = "waiting");
+        this.renderNodes();
+
+        try {
+            const res = await fetch('/api/canvas/run-pipeline', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nodes: this.nodes,
+                    connections: this.connections,
+                    initial_input: task
+                })
+            });
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder('utf-8');
+            let buffer = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const dataStr = line.replace('data: ', '').trim();
+                        if (dataStr === '[DONE]') continue;
+                        try {
+                            const ev = JSON.parse(dataStr);
+                            if (ev.type === 'node_start') {
+                                const target = this.nodes.find(n => n.id === ev.node_id);
+                                if (target) {
+                                    target.status = "running";
+                                    this.renderNodes();
+                                }
+                            } else if (ev.type === 'node_complete') {
+                                const target = this.nodes.find(n => n.id === ev.node_id);
+                                if (target) {
+                                    target.status = "completed";
+                                    target.elapsed = ev.elapsed;
+                                    this.renderNodes();
+                                }
+                            } else if (ev.type === 'line_pulse' && ev.from_node && ev.to_node) {
+                                this.pulses.push({
+                                    from: ev.from_node,
+                                    to: ev.to_node,
+                                    progress: 0.0
+                                });
+                            }
+                        } catch (e) {}
+                    }
+                }
+            }
+            alert("🎉 캔버스 워크플로우 파이프라인 실행이 성공적으로 완료되었습니다!");
+        } catch (e) {
+            alert(`실행 오류: ${e.message}`);
+        } finally {
+            this.isExecuting = false;
+            this.renderNodes();
+        }
+    }
+
+    // ==========================================
     // 노드 렌더링
     // ==========================================
     renderNodes() {
@@ -168,10 +268,20 @@ class WorkflowCanvas {
 
         this.nodes.forEach(node => {
             const el = document.createElement('div');
-            el.className = `agent-node node-type-${node.type}`;
+            const statusClass = node.status ? `node-status-${node.status}` : '';
+            el.className = `agent-node node-type-${node.type} ${statusClass}`;
             el.id = node.id;
             el.style.left = `${node.x}px`;
             el.style.top = `${node.y}px`;
+
+            let statusBadge = '';
+            if (node.status === 'running') {
+                statusBadge = '<span class="node-role-badge" style="background:rgba(245,158,11,0.2); color:#F59E0B; animation:pulse 1s infinite;">⚡ 실행 중</span>';
+            } else if (node.status === 'completed') {
+                statusBadge = `<span class="node-role-badge" style="background:rgba(16,185,129,0.2); color:#10B981;">✅ 완료 (${node.elapsed || 0}s)</span>`;
+            } else if (node.status === 'waiting') {
+                statusBadge = '<span class="node-role-badge" style="background:rgba(255,255,255,0.08); color:#94A3B8;">⏳ 대기</span>';
+            }
 
             let bodyContent = '';
             if (node.type === 'agent') {
@@ -180,43 +290,53 @@ class WorkflowCanvas {
                     : '';
                 bodyContent = `
                     <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
-                        <div><strong>Model:</strong> <span style="color:#A7F3D0;">${node.model || 'default'}</span> (T: ${node.temperature || 0.7})</div>
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <span><strong>Model:</strong> <span style="color:#A7F3D0;">${node.model || 'default'}</span></span>
+                            ${statusBadge}
+                        </div>
                         ${toolsBadge}
                         <div style="margin-top:6px; font-size:10px; color:var(--text-dim); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;">
                             ${node.system_prompt}
                         </div>
-                        <button class="btn-secondary" style="width:100%; margin-top:6px; padding:3px 6px; font-size:10px; justify-content:center;" onclick="window.workflowCanvas.openConfigModal('${node.id}')">⚙️ 노드 상세 설정 자율화</button>
+                        <button class="btn-secondary" style="width:100%; margin-top:6px; padding:3px 6px; font-size:10px; justify-content:center;" onclick="window.workflowCanvas.openConfigModal('${node.id}')">⚙️ 노드 설정 자율화</button>
                     </div>
                 `;
             } else if (node.type === 'python') {
                 bodyContent = `
                     <div style="font-size:11px; margin-bottom:6px;">
-                        <textarea class="node-input" id="code_${node.id}" style="width:100%; height:75px; font-family:'JetBrains Mono',monospace; font-size:10px; color:#38BDF8;" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'code', this.value)">${node.code || ''}</textarea>
-                        <button class="btn-primary" style="width:100%; margin-top:4px; padding:4px; font-size:11px; justify-content:center;" onclick="window.workflowCanvas.runPythonNode('${node.id}')">▶ 코드 즉시 실행</button>
-                        <div id="output_${node.id}" style="margin-top:6px; font-size:10px; color:#A7F3D0; font-family:'JetBrains Mono',monospace; max-height:45px; overflow-y:auto; background:rgba(0,0,0,0.4); padding:4px; border-radius:4px; display:none;"></div>
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span style="color:#38BDF8; font-size:10px;">Python 3.x Sandbox</span>
+                            ${statusBadge}
+                        </div>
+                        <textarea class="node-input" id="code_${node.id}" style="width:100%; height:65px; font-family:'JetBrains Mono',monospace; font-size:10px; color:#38BDF8;" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'code', this.value)">${node.code || ''}</textarea>
+                        <button class="btn-primary" style="width:100%; margin-top:4px; padding:3px; font-size:10px; justify-content:center;" onclick="window.workflowCanvas.runPythonNode('${node.id}')">▶ 단독 실행</button>
                     </div>
                 `;
             } else if (node.type === 'rag') {
                 bodyContent = `
                     <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
-                        <span>검색 쿼리:</span>
-                        <input type="text" class="node-input" value="${node.query || ''}" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'query', this.value)" style="width:100%; margin-top:4px; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span>시맨틱 검색 쿼리:</span>
+                            ${statusBadge}
+                        </div>
+                        <input type="text" class="node-input" value="${node.query || ''}" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'query', this.value)" style="width:100%; font-size:11px;">
                     </div>
                 `;
             } else if (node.type === 'output') {
                 bodyContent = `
                     <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
-                        <span>저장 파일명:</span>
-                        <input type="text" class="node-input" value="${node.filename || 'output.txt'}" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'filename', this.value)" style="width:100%; margin-top:4px; font-size:11px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                            <span>저장 파일:</span>
+                            ${statusBadge}
+                        </div>
+                        <input type="text" class="node-input" value="${node.filename || 'output.txt'}" onchange="window.workflowCanvas.updateNodeProp('${node.id}', 'filename', this.value)" style="width:100%; font-size:11px;">
                     </div>
                 `;
             }
 
             el.innerHTML = `
                 <div class="node-header">
-                    <div style="display:flex; align-items:center; gap:6px;">
-                        <span class="node-title">${node.name}</span>
-                    </div>
+                    <span class="node-title">${node.name}</span>
                     <div style="display:flex; align-items:center; gap:4px;">
                         <span class="node-role-badge">${node.role}</span>
                         <button onclick="window.workflowCanvas.deleteNode('${node.id}')" style="background:transparent; border:none; color:var(--text-dim); cursor:pointer; font-size:11px;">✕</button>
@@ -238,7 +358,7 @@ class WorkflowCanvas {
     }
 
     // ==========================================
-    // 노드 설정 자율화 모달 제어 (Issue #8)
+    // 노드 설정 자율화 모달 제어
     // ==========================================
     async openConfigModal(id) {
         const node = this.nodes.find(n => n.id === id);
@@ -254,7 +374,6 @@ class WorkflowCanvas {
         document.getElementById('cfgNodeTemp').value = node.temperature || 0.7;
         document.getElementById('cfgTempLabel').innerText = node.temperature || 0.7;
 
-        // MCP 도구 목록 체크박스 렌더링
         const toolBox = document.getElementById('cfgToolCheckboxes');
         if (toolBox) {
             toolBox.innerHTML = '로딩 중...';
@@ -294,7 +413,6 @@ class WorkflowCanvas {
         node.system_prompt = document.getElementById('cfgNodePrompt').value;
         node.temperature = parseFloat(document.getElementById('cfgNodeTemp').value);
 
-        // 체크된 도구 수집
         const chks = document.querySelectorAll('.mcp-tool-chk:checked');
         node.tools = Array.from(chks).map(c => c.value);
 
@@ -316,14 +434,7 @@ class WorkflowCanvas {
     async runPythonNode(id) {
         const node = this.nodes.find(n => n.id === id);
         if (!node) return;
-
         const code = document.getElementById(`code_${id}`)?.value || node.code;
-        const outEl = document.getElementById(`output_${id}`);
-        if (outEl) {
-            outEl.style.display = 'block';
-            outEl.innerText = '실행 중...';
-        }
-
         try {
             const res = await fetch('/api/canvas/execute-python', {
                 method: 'POST',
@@ -331,11 +442,9 @@ class WorkflowCanvas {
                 body: JSON.stringify({ code: code })
             });
             const data = await res.json();
-            if (outEl) {
-                outEl.innerText = data.output;
-            }
+            alert(`[Python 실행 결과]\n${data.output}`);
         } catch (e) {
-            if (outEl) outEl.innerText = `Error: ${e.message}`;
+            alert(`Error: ${e.message}`);
         }
     }
 
@@ -350,6 +459,7 @@ class WorkflowCanvas {
         let newNode = {
             id: `node_${Date.now()}`,
             type: type,
+            status: "idle",
             x: 100 + (count % 3) * 80,
             y: 120 + (count % 3) * 60
         };
@@ -440,11 +550,20 @@ class WorkflowCanvas {
             this.ctx.lineWidth = 2.5;
             this.ctx.stroke();
 
-            // 화살표 헤드
-            this.ctx.fillStyle = '#6366F1';
-            this.ctx.beginPath();
-            this.ctx.arc(endX, endY, 5, 0, Math.PI * 2);
-            this.ctx.fill();
+            // 파티클 펄스 렌더링
+            this.pulses.filter(p => p.from === conn.from && p.to === conn.to).forEach(p => {
+                const t = p.progress;
+                const px = Math.pow(1 - t, 3) * startX + 3 * Math.pow(1 - t, 2) * t * cp1X + 3 * (1 - t) * Math.pow(t, 2) * cp2X + Math.pow(t, 3) * endX;
+                const py = Math.pow(1 - t, 3) * startY + 3 * Math.pow(1 - t, 2) * t * cp1Y + 3 * (1 - t) * Math.pow(t, 2) * cp2Y + Math.pow(t, 3) * endY;
+
+                this.ctx.shadowColor = '#38BDF8';
+                this.ctx.shadowBlur = 12;
+                this.ctx.fillStyle = '#38BDF8';
+                this.ctx.beginPath();
+                this.ctx.arc(px, py, 6, 0, Math.PI * 2);
+                this.ctx.fill();
+            });
+
             this.ctx.restore();
         });
     }
