@@ -232,7 +232,13 @@ class SingleChat {
 
             session.messages.push({ role: "assistant", content: fullReply });
             this.saveSessions();
-            if (window.brainVisualizer) window.brainVisualizer.loadGraph();
+            if (window.brainVisualizer) {
+                if (typeof window.brainVisualizer.loadGraph === 'function') {
+                    window.brainVisualizer.loadGraph();
+                } else if (typeof window.brainVisualizer.loadGraphData === 'function') {
+                    window.brainVisualizer.loadGraphData();
+                }
+            }
         } catch (e) {
             if (e.name === 'AbortError') {
                 if (streamTarget) streamTarget.innerText = fullReply + "\n\n[⏹️ 사용자에 의해 생성이 중단되었습니다]";

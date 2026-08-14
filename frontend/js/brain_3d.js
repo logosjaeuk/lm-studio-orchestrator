@@ -33,6 +33,10 @@ class Brain3DVisualizer {
         this.canvas.height = this.container.clientHeight;
     }
 
+    async loadGraph() {
+        return await this.loadGraphData();
+    }
+
     async loadGraphData() {
         try {
             const res = await fetch('/api/brain/graph');
