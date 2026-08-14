@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LM Studio Orchestrator & Local Agent Studio</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- 왼쪽 사이드바 -->
+    <aside class="sidebar">
+        <div class="brand-header">
+            <div class="brand-logo">🧠</div>
+            <div class="brand-text">
+                <h1>LM Orchestrator</h1>
+                <p>Local Agent & RAG Studio</p>
+            </div>
+        </div>
+
+        <!-- LM Studio 연결 상태 뱃지 -->
+        <div id="lmStatusBadge" class="lm-status-badge">
+            <div class="status-indicator">
+                <span class="dot"></span>
+                <span id="lmStatusText">LM Studio 연결 중...</span>
+            </div>
+            <button class="nav-btn" onclick="checkServerHealth()" style="padding: 2px 6px; font-size: 10px;">새로고침</button>
+        </div>
+
+        <!-- 메인 네비게이션 탭 -->
+        <nav class="nav-menu">
+            <div class="nav-item active" onclick="switchView('canvasView')">
+                <span class="nav-icon">🕸️</span>
+                <span>에이전트 캔버스</span>
+            </div>
+            <div class="nav-item" onclick="switchView('chatView')">
+                <span class="nav-icon">👥</span>
+                <span>멀티 에이전트 릴레이</span>
+            </div>
+            <div class="nav-item" onclick="switchView('ragView')">
+                <span class="nav-icon">📚</span>
+                <span>로컬 RAG 지식베이스</span>
+            </div>
+            <div class="nav-item" onclick="switchView('datasetView')">
+                <span class="nav-icon">🧪</span>
+                <span>데이터셋 & LoRA 빌더</span>
+            </div>
+        </nav>
+
+        <!-- 모델 선택 패널 -->
+        <div class="model-selector-panel">
+            <div class="model-label">활성 로컬 모델</div>
+            <select id="modelSelect" class="custom-select">
+                <option value="default">LM Studio 로드된 모델</option>
+            </select>
+        </div>
+    </aside>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="main-content">
+        <!-- 1. 비주얼 에이전트 워크플로우 캔버스 뷰 -->
+        <section id="canvasView" class="view-section active">
+            <header class="top-header">
+                <div class="page-title">🕸️ 노드 기반 에이전트 워크플로우 캔버스</div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="addAgentNode()">➕ 에이전트 추가</button>
+                    <button class="btn-secondary" onclick="resetCanvas()">🔄 템플릿 초기화</button>
+                    <button class="btn-primary" onclick="runCanvasWorkflow()">▶ 워크플로우 실행</button>
+                </div>
+            </header>
+            <div class="canvas-container" id="canvasContainer">
+                <canvas id="workflowCanvas"></canvas>
+                <div class="canvas-nodes-layer" id="nodesLayer"></div>
+            </div>
+        </section>
+
+        <!-- 2. 멀티 에이전트 릴레이 / 토론 채팅 뷰 -->
+        <section id="chatView" class="view-section">
+            <header class="top-header">
+                <div class="page-title">👥 멀티 에이전트 실시간 오케스트레이터</div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="clearChat()">🗑️ 대화 초기화</button>
+                    <button class="btn-secondary" onclick="exportToDataset()">📥 데이터셋으로 저장</button>
+                </div>
+            </header>
+            <div class="chat-workspace">
+                <div class="messages-list" id="messagesList">
+                    <div class="agent-msg-card">
+                        <div class="agent-msg-header">
+                            <div class="agent-info">
+                                <span>🤖</span>
+                                <span>LM Studio Orchestrator</span>
+                            </div>
+                            <span class="node-role-badge">시스템</span>
+                        </div>
+                        <div class="msg-content">
+                            안녕하세요! LM Studio 로컬 LLM을 기반으로 <strong>[기획자 ➔ 개발자 ➔ 리뷰어]</strong> 순차 릴레이 또는 <strong>[토론형 아레나]</strong> 협업을 실행할 수 있습니다.<br>
+                            아래 프롬프트에 원하는 과업을 입력하고 실행해 보세요!
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-bar-container">
+                    <textarea id="promptInput" class="prompt-textarea" placeholder="에이전트 팀에게 지시할 프로젝트 과업 또는 토론 주제를 입력하세요... (예: 초고속 파일 검색 CLI 도구 설계 및 파이썬 코드 작성)"></textarea>
+                    <div class="input-options-bar">
+                        <div class="mode-pills">
+                            <span class="pill-option active" id="modeSeq" onclick="setMode('sequential')">🔗 순차 릴레이</span>
+                            <span class="pill-option" id="modeDebate" onclick="setMode('debate')">⚔️ 토론 아레나</span>
+                            <label style="display: flex; align-items: center; gap: 6px; font-size: 11px; margin-left: 10px; cursor: pointer;">
+                                <input type="checkbox" id="ragToggle">
+                                <span>📚 RAG 문서 참조</span>
+                            </label>
+                        </div>
+                        <button id="sendBtn" class="btn-primary" onclick="startOrchestration()">
+                            <span>실행</span>
+                            <span>➔</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 3. 로컬 문서 RAG 지식베이스 뷰 -->
+        <section id="ragView" class="view-section">
+            <header class="top-header">
+                <div class="page-title">📚 로컬 문서 RAG 지식베이스 매니저</div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="clearKnowledgeBase()">🗑️ 지식베이스 비우기</button>
+                </div>
+            </header>
+            <div class="rag-layout">
+                <div class="rag-sidebar">
+                    <div class="dropzone" id="ragDropzone" onclick="document.getElementById('fileInput').click()">
+                        <div style="font-size: 28px; margin-bottom: 8px;">📄</div>
+                        <div style="font-weight: 700; font-size: 13px; margin-bottom: 4px;">문서 파일 업로드</div>
+                        <div style="font-size: 11px; color: var(--text-muted);">TXT, Markdown, Code, JSON 파일 드래그</div>
+                        <input type="file" id="fileInput" style="display: none;" onchange="handleFileUpload(event)">
+                    </div>
+                    <div style="font-weight: 700; font-size: 12px; color: var(--text-dim); text-transform: uppercase;">등록된 지식 문서</div>
+                    <div class="rag-file-list" id="ragFileList">
+                        <div style="color: var(--text-dim); font-size: 12px;">등록된 문서가 없습니다.</div>
+                    </div>
+                </div>
+                <div class="rag-main">
+                    <div class="input-bar-container" style="margin-top: 0; margin-bottom: 16px;">
+                        <div style="display: flex; gap: 10px;">
+                            <input type="text" id="ragSearchInput" class="prompt-textarea" style="min-height: auto; padding: 6px;" placeholder="지식베이스 유사도 검색 쿼리 입력...">
+                            <button class="btn-primary" onclick="testRAGSearch()">검색 테스트</button>
+                        </div>
+                    </div>
+                    <div style="font-weight: 700; font-size: 13px; margin-bottom: 10px;">검색된 관련 청크 (Top-K)</div>
+                    <div id="ragSearchResults" style="display: flex; flex-direction: column; gap: 10px; overflow-y: auto; max-height: calc(100vh - 220px);">
+                        <div style="color: var(--text-dim); font-size: 12px;">검색어를 입력하면 실시간으로 유사도 높은 청크가 표시됩니다.</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 4. 파인튜닝 데이터셋 & LoRA 스크립트 빌더 뷰 -->
+        <section id="datasetView" class="view-section">
+            <header class="top-header">
+                <div class="page-title">🧪 파인튜닝 데이터셋 & LoRA 스크립트 빌더</div>
+                <div class="header-actions">
+                    <button class="btn-secondary" onclick="exportDatasetFormat('alpaca')">Alpaca JSON</button>
+                    <button class="btn-secondary" onclick="exportDatasetFormat('sharegpt')">ShareGPT JSON</button>
+                    <button class="btn-secondary" onclick="exportDatasetFormat('jsonl')">OpenAI JSONL</button>
+                    <button class="btn-primary" onclick="generateUnslothScript()">⚡ Unsloth 학습 스크립트 생성</button>
+                </div>
+            </header>
+            <div class="dataset-layout">
+                <div style="display: flex; flex-direction: column; gap: 14px;">
+                    <div style="font-weight: 700; font-size: 14px;">학습 데이터 수동 추가 / 에이전트 수집 로그</div>
+                    <div class="input-bar-container" style="margin: 0;">
+                        <input type="text" id="dsInstruction" class="prompt-textarea" style="min-height: auto;" placeholder="Instruction (지시사항)">
+                        <textarea id="dsInput" class="prompt-textarea" style="min-height: 50px;" placeholder="Input / Context (선택적 맥락)"></textarea>
+                        <textarea id="dsOutput" class="prompt-textarea" style="min-height: 80px;" placeholder="Output (모범 답변)"></textarea>
+                        <button class="btn-primary" style="align-self: flex-end;" onclick="addManualDataset()">데이터셋에 추가</button>
+                    </div>
+                    <div style="font-weight: 700; font-size: 13px; color: var(--text-muted);" id="dsCountLabel">수집된 데이터셋: 0 건</div>
+                </div>
+                <div class="code-preview-card">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <span style="font-size: 12px; font-weight: 700; color: #38bdf8;">📄 출력 미리보기 / 파이썬 파인튜닝 스크립트</span>
+                        <button class="btn-secondary" style="padding: 4px 10px; font-size: 10px;" onclick="copyCodePreview()">복사</button>
+                    </div>
+                    <textarea id="codePreview" class="code-preview-area" readonly placeholder="상단 버튼을 눌러 데이터셋 포맷 또는 Unsloth 학습 스크립트를 생성하세요..."></textarea>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 스크립트 로드 -->
+    <script src="js/api.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/chat.js"></script>
+    <script src="js/rag.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
