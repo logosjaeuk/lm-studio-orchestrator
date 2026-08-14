@@ -14,8 +14,9 @@ from .dataset_builder import dataset_builder
 from .orchestrator import orchestrator_engine
 from .brain_memory import brain_engine
 from .code_sandbox import code_sandbox
+from .mcp_manager import mcp_manager
 
-app = FastAPI(title="LM Studio Orchestrator API", version="2.1.0")
+app = FastAPI(title="LM Studio Orchestrator API", version="2.2.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,6 +46,18 @@ class PipelineRequest(BaseModel):
 class PythonExecRequest(BaseModel):
     code: str
 
+class MCPRegisterRequest(BaseModel):
+    id: str
+    name: str
+    type: str = "stdio"
+    command: Optional[str] = ""
+    url: Optional[str] = ""
+    tools: List[str] = []
+
+class MCPExecuteRequest(BaseModel):
+    tool: str
+    args: Dict[str, Any] = {}
+
 class CanvasSaveRequest(BaseModel):
     name: str = "default_workflow"
     workflow: Dict[str, Any]
@@ -70,11 +83,10 @@ WORKFLOW_STORAGE = "./knowledge_base/saved_workflows.json"
 
 @app.get("/api/health")
 async def get_health():
-    """LM Studio 헬스체크 및 모델 목록 조회"""
     return await lm_client.check_health()
 
 # ==========================================
-# 1. 1:1 싱글 챗 플레이그라운드 API (Issue #1)
+# 1. 1:1 싱글 챗 플레이그라운드 API (Issue #1, #6)
 # ==========================================
 @app.get("/api/presets")
 async def get_presets():
@@ -132,16 +144,43 @@ async def single_chat_stream(req: SingleChatRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 2. 캔버스 도구 노드 & 워크플로우 API (Issue #4)
+# 2. MCP (Model Context Protocol) API (Issue #5, #7)
+# ==========================================
+@app.get("/api/mcp/servers")
+async def get_mcp_servers():
+    return {"servers": mcp_manager.servers}
+
+@app.post("/api/mcp/servers")
+async def register_mcp_server(req: MCPRegisterRequest):
+    mcp_manager.servers[req.id] = {
+        "name": req.name,
+        "type": req.type,
+        "command": req.command,
+        "url": req.url,
+        "enabled": True,
+        "tools": req.tools or ["default_action"]
+    }
+    mcp_manager.save_servers()
+    return {"status": "success", "server": mcp_manager.servers[req.id]}
+
+@app.get("/api/mcp/tools")
+async def get_mcp_tools():
+    return {"tools": mcp_manager.get_all_tools()}
+
+@app.post("/api/mcp/execute")
+async def execute_mcp_tool(req: MCPExecuteRequest):
+    res = mcp_manager.execute_tool(req.tool, req.args)
+    return res
+
+# ==========================================
+# 3. 캔버스 도구 노드 & 워크플로우 API (Issue #4, #8)
 # ==========================================
 @app.post("/api/canvas/execute-python")
 async def execute_python(req: PythonExecRequest):
-    """파이썬 코드 실행 샌드박스"""
     return code_sandbox.execute_python(req.code)
 
 @app.post("/api/canvas/save")
 async def save_canvas_workflow(req: CanvasSaveRequest):
-    """캔버스 워크플로우 저장"""
     os.makedirs(os.path.dirname(WORKFLOW_STORAGE), exist_ok=True)
     workflows = {}
     if os.path.exists(WORKFLOW_STORAGE):
@@ -157,7 +196,6 @@ async def save_canvas_workflow(req: CanvasSaveRequest):
 
 @app.get("/api/canvas/workflows")
 async def list_canvas_workflows():
-    """저장된 워크플로우 목록"""
     if os.path.exists(WORKFLOW_STORAGE):
         try:
             with open(WORKFLOW_STORAGE, "r", encoding="utf-8") as f:
@@ -167,7 +205,7 @@ async def list_canvas_workflows():
     return {}
 
 # ==========================================
-# 3. 3D 브레인 지식 그래프 & 자가 학습 API
+# 4. 3D 브레인 지식 그래프 & 자가 학습 API
 # ==========================================
 @app.get("/api/brain/graph")
 async def get_brain_graph():
@@ -183,7 +221,7 @@ async def consolidate_brain_memory():
     return brain_engine.auto_consolidate()
 
 # ==========================================
-# 4. 멀티 에이전트 오케스트레이션 API
+# 5. 멀티 에이전트 오케스트레이션 API
 # ==========================================
 @app.post("/api/orchestrate/stream")
 async def orchestrate_stream(req: PipelineRequest):
@@ -209,7 +247,7 @@ async def orchestrate_stream(req: PipelineRequest):
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 # ==========================================
-# 5. RAG 및 파인튜닝 데이터셋 API
+# 6. RAG 및 파인튜닝 데이터셋 API
 # ==========================================
 @app.get("/api/rag/stats")
 async def get_rag_stats():

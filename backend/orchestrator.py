@@ -1,127 +1,144 @@
 import json
-import asyncio
+import re
 from typing import List, Dict, Any, AsyncGenerator
 from .lm_client import lm_client
 from .rag_engine import rag_engine
-
-class AgentNode:
-    def __init__(self, id: str, name: str, role: str, system_prompt: str, model: str = "default", temperature: float = 0.7):
-        self.id = id
-        self.name = name
-        self.role = role
-        self.system_prompt = system_prompt
-        self.model = model
-        self.temperature = temperature
+from .mcp_manager import mcp_manager
 
 class OrchestrationEngine:
-    def __init__(self):
-        pass
-
     async def run_sequential_pipeline(
         self,
         agents: List[Dict[str, Any]],
-        user_input: str,
+        user_task: str,
         use_rag: bool = False,
         model: str = "default"
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """순차 릴레이 체인 실행 (SSE 스트리밍 이벤트 생성)"""
-        current_context = user_input
-
-        # 1. RAG 검색이 활성화된 경우
+        """순차적 에이전트 협업 릴레이 + 독립 MCP 도구 호출 지원"""
+        context_accumulator = f"## 최초 사용자 요청 과업:\n{user_task}\n"
+        
+        # RAG 맥락 주입
         if use_rag:
-            yield {"type": "step_start", "agent": "📚 Local RAG", "role": "지식베이스 검색 중..."}
-            rag_context = rag_engine.get_augmented_context(user_input, top_k=3)
+            rag_context = rag_engine.get_augmented_context(user_task, top_k=2)
             if rag_context:
-                current_context = f"{rag_context}\n\n[사용자 요청]:\n{user_input}"
-                yield {"type": "token", "agent": "📚 Local RAG", "delta": f"지식베이스에서 관련 문서 청크를 성공적으로 추출하여 프롬프트에 주입했습니다.\n\n"}
-            else:
-                yield {"type": "token", "agent": "📚 Local RAG", "delta": "관련 문서를 찾지 못해 기본 입력으로 진행합니다.\n\n"}
-            yield {"type": "step_end", "agent": "📚 Local RAG", "output": rag_context}
+                context_accumulator += f"\n{rag_context}\n"
 
-        # 2. 에이전트 릴레이 실행
-        for idx, agent_data in enumerate(agents):
-            agent_name = agent_data.get("name", f"Agent {idx+1}")
-            agent_role = agent_data.get("role", "도우미")
-            system_prompt = agent_data.get("system_prompt", "당신은 유능한 AI 어시스턴트입니다.")
-            agent_model = agent_data.get("model", model)
-            temp = float(agent_data.get("temperature", 0.7))
+        for i, agent in enumerate(agents):
+            agent_name = agent.get("name", f"Agent_{i+1}")
+            agent_role = agent.get("role", "Collaborator")
+            base_prompt = agent.get("system_prompt", "당신은 AI 에이전트입니다.")
+            assigned_tools = agent.get("tools", []) # 에이전트별 독립 MCP 도구 목록
+            agent_model = agent.get("model") or model
+            temp = agent.get("temperature", 0.7)
 
             yield {
                 "type": "step_start",
+                "step": i + 1,
+                "total_steps": len(agents),
                 "agent": agent_name,
-                "role": agent_role,
-                "step_index": idx + 1,
-                "total_steps": len(agents)
+                "role": agent_role
             }
 
-            # 메시지 구성
-            prompt_content = f"이전 단계 산출물 및 지시사항:\n{current_context}\n\n당신의 역할({agent_role})에 맞게 완성도 높은 결과를 생성하세요."
+            # 도구 스키마 프롬프트 빌드
+            tool_prompt = ""
+            available_tools = [t for t in mcp_manager.get_all_tools() if t["name"] in assigned_tools]
+            if available_tools:
+                tool_prompt = "\n\n### 사용할 수 있는 MCP 도구 목록:\n"
+                for t in available_tools:
+                    tool_prompt += f"- `{t['name']}`: {t['description']}\n"
+                tool_prompt += "\n도구를 실행해야 할 경우 다음과 같은 JSON 형식으로만 단독 출력하세요:\n"
+                tool_prompt += '```json\n{"action": "tool_call", "tool": "도구이름", "args": {"파라미터": "값"}}\n```\n'
+
+            system_instruction = f"{base_prompt}\n\n당신의 역할은 [{agent_role}]입니다. 이전 단계까지의 맥락을 검토하고 맡은 과업을 완성하세요.{tool_prompt}"
+
             messages = [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": prompt_content}
+                {"role": "system", "content": system_instruction},
+                {"role": "user", "content": f"현재까지 진행된 작업 맥락:\n\n{context_accumulator}\n\n위 내용을 이어받아 [{agent_name}]로서 당신의 산출물을 작성하세요."}
             ]
 
-            step_output = ""
+            agent_response = ""
             async for chunk in lm_client.chat_stream(messages, model=agent_model, temperature=temp):
-                step_output += chunk
+                agent_response += chunk
                 yield {"type": "token", "agent": agent_name, "delta": chunk}
 
-            current_context = step_output
-            yield {"type": "step_end", "agent": agent_name, "output": step_output}
+            # 도구 호출(Tool Call) 감지 및 실행 루프
+            if '{"action": "tool_call"' in agent_response:
+                try:
+                    match = re.search(r'\{"action":\s*"tool_call",\s*"tool":\s*"([^"]+)",\s*"args":\s*(\{.*?\})\}', agent_response, re.DOTALL)
+                    if match:
+                        tool_name = match.group(1)
+                        tool_args = json.loads(match.group(2))
+                        yield {"type": "token", "agent": agent_name, "delta": f"\n\n⚙️ *[MCP 도구 실행 중: `{tool_name}`]...*\n"}
+                        
+                        tool_res = mcp_manager.execute_tool(tool_name, tool_args)
+                        tool_output_str = json.dumps(tool_res, ensure_ascii=False)
+                        
+                        # 도구 실행 결과를 반영한 후속 완성 호출
+                        yield {"type": "token", "agent": agent_name, "delta": f"✅ *[도구 실행 결과]*:\n```\n{tool_output_str}\n```\n\n"}
+                        
+                        followup_msgs = messages + [
+                            {"role": "assistant", "content": agent_response},
+                            {"role": "user", "content": f"도구 실행 결과입니다:\n{tool_output_str}\n\n이 결과를 바탕으로 최종 결론 및 산출물을 완성하세요."}
+                        ]
+                        
+                        async for chunk in lm_client.chat_stream(followup_msgs, model=agent_model, temperature=temp):
+                            agent_response += chunk
+                            yield {"type": "token", "agent": agent_name, "delta": chunk}
+                except Exception as e:
+                    yield {"type": "token", "agent": agent_name, "delta": f"\n[도구 실행 오류: {str(e)}]\n"}
 
-        yield {"type": "pipeline_complete", "final_result": current_context}
+            yield {
+                "type": "step_end",
+                "step": i + 1,
+                "agent": agent_name,
+                "output": agent_response
+            }
+
+            context_accumulator += f"\n\n### [{agent_name} ({agent_role})] 산출물:\n{agent_response}\n"
 
     async def run_debate_arena(
         self,
         agent_a: Dict[str, Any],
         agent_b: Dict[str, Any],
-        judge: Dict[str, Any],
+        judge_agent: Dict[str, Any],
         topic: str,
         rounds: int = 2,
         model: str = "default"
     ) -> AsyncGenerator[Dict[str, Any], None]:
-        """두 에이전트의 턴제 토론 & 심판 종합"""
-        yield {"type": "debate_start", "topic": topic}
-        history = f"[토론 주제]: {topic}\n\n"
+        """토론형 아레나 파이프라인"""
+        debate_history = f"## 토론 주제: {topic}\n"
 
-        for r in range(1, rounds + 1):
+        for r in range(rounds):
             # Agent A 발언
-            yield {"type": "step_start", "agent": agent_a['name'], "role": f"Round {r} - {agent_a['role']}"}
-            messages_a = [
-                {"role": "system", "content": agent_a.get("system_prompt", "")},
-                {"role": "user", "content": f"{history}\n당신의 입장({agent_a['role']})에서 논리적인 주장을 펼치세요."}
+            yield {"type": "step_start", "agent": agent_a.get("name", "Proponent"), "role": f"찬성/발제 (라운드 {r+1})"}
+            msgs_a = [
+                {"role": "system", "content": f"{agent_a.get('system_prompt', '당신은 찬성측입니다.')}\n토론 주제에 대해 강력한 논거를 제시하세요."},
+                {"role": "user", "content": f"현재 토론 진행 상황:\n{debate_history}\n\n발언하세요."}
             ]
             resp_a = ""
-            async for chunk in lm_client.chat_stream(messages_a, model=model):
+            async for chunk in lm_client.chat_stream(msgs_a, model=model):
                 resp_a += chunk
-                yield {"type": "token", "agent": agent_a['name'], "delta": chunk}
-            history += f"\n[{agent_a['name']}]: {resp_a}\n"
-            yield {"type": "step_end", "agent": agent_a['name'], "output": resp_a}
+                yield {"type": "token", "agent": agent_a.get("name", "Proponent"), "delta": chunk}
+            debate_history += f"\n[{agent_a.get('name', 'Proponent')} (R{r+1})]:\n{resp_a}\n"
 
-            # Agent B 발언
-            yield {"type": "step_start", "agent": agent_b['name'], "role": f"Round {r} - {agent_b['role']}"}
-            messages_b = [
-                {"role": "system", "content": agent_b.get("system_prompt", "")},
-                {"role": "user", "content": f"{history}\n상대방의 주장을 반박하거나 보완하는 의견을 제시하세요."}
+            # Agent B 반론
+            yield {"type": "step_start", "agent": agent_b.get("name", "Critic"), "role": f"비판/반론 (라운드 {r+1})"}
+            msgs_b = [
+                {"role": "system", "content": f"{agent_b.get('system_prompt', '당신은 반대측입니다.')}\n상대의 취약점과 리스크를 조목조목 지적하세요."},
+                {"role": "user", "content": f"현재 토론 진행 상황:\n{debate_history}\n\n반론하세요."}
             ]
             resp_b = ""
-            async for chunk in lm_client.chat_stream(messages_b, model=model):
+            async for chunk in lm_client.chat_stream(msgs_b, model=model):
                 resp_b += chunk
-                yield {"type": "token", "agent": agent_b['name'], "delta": chunk}
-            history += f"\n[{agent_b['name']}]: {resp_b}\n"
-            yield {"type": "step_end", "agent": agent_b['name'], "output": resp_b}
+                yield {"type": "token", "agent": agent_b.get("name", "Critic"), "delta": chunk}
+            debate_history += f"\n[{agent_b.get('name', 'Critic')} (R{r+1})]:\n{resp_b}\n"
 
-        # 심판(Judge) 최종 종합
-        yield {"type": "step_start", "agent": judge['name'], "role": "최종 판정 및 솔루션 종합"}
-        messages_judge = [
-            {"role": "system", "content": judge.get("system_prompt", "당신은 공정한 토론 심판 및 총괄 기획자입니다.")},
-            {"role": "user", "content": f"다음 토론 내용을 평가하고 최선의 합의된 결론을 도출하세요:\n\n{history}"}
+        # Judge 판결
+        yield {"type": "step_start", "agent": judge_agent.get("name", "Judge"), "role": "총괄 심판 및 최적 합의안 도출"}
+        msgs_judge = [
+            {"role": "system", "content": f"{judge_agent.get('system_prompt', '당신은 총괄 심판입니다.')}\n양측의 토론을 분석하여 최선의 실행 가능한 솔루션을 판결하세요."},
+            {"role": "user", "content": f"전체 토론 기록:\n{debate_history}\n\n최종 판결과 합의안을 작성하세요."}
         ]
-        final_judge = ""
-        async for chunk in lm_client.chat_stream(messages_judge, model=model):
-            final_judge += chunk
-            yield {"type": "token", "agent": judge['name'], "delta": chunk}
-        yield {"type": "step_end", "agent": judge['name'], "output": final_judge}
-        yield {"type": "debate_complete", "final_result": final_judge}
+        async for chunk in lm_client.chat_stream(msgs_judge, model=model):
+            yield {"type": "token", "agent": judge_agent.get("name", "Judge"), "delta": chunk}
 
 orchestrator_engine = OrchestrationEngine()
