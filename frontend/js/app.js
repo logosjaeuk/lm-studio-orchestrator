@@ -1,4 +1,4 @@
-// LM Studio Orchestrator 메인 앱 컨트롤러
+// LM Studio Orchestrator & Brain Studio 전역 앱 컨트롤러
 
 function switchView(viewId) {
     document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
@@ -9,10 +9,13 @@ function switchView(viewId) {
 
     // 네비게이션 액티브 갱신
     const navMap = {
-        'canvasView': 0,
-        'chatView': 1,
-        'ragView': 2,
-        'datasetView': 3
+        'singleChatView': 0,
+        'brainView': 1,
+        'selfLearningView': 2,
+        'canvasView': 3,
+        'chatView': 4,
+        'ragView': 5,
+        'datasetView': 6
     };
     const navItems = document.querySelectorAll('.nav-item');
     if (navItems[navMap[viewId]]) {
@@ -21,6 +24,15 @@ function switchView(viewId) {
 
     if (viewId === 'canvasView' && window.workflowCanvas) {
         setTimeout(() => window.workflowCanvas.initCanvasSize(), 50);
+    }
+    if (viewId === 'brainView' && window.brainVisualizer) {
+        setTimeout(() => {
+            window.brainVisualizer.resize();
+            window.brainVisualizer.loadGraphData();
+        }, 50);
+    }
+    if (viewId === 'selfLearningView' && window.selfLearning) {
+        window.selfLearning.refresh();
     }
     if (viewId === 'ragView' && window.ragManager) {
         window.ragManager.refreshStats();
@@ -95,6 +107,7 @@ async function startOrchestration() {
         () => {
             sendBtn.disabled = false;
             sendBtn.innerHTML = '<span>실행</span><span>➔</span>';
+            if (window.brainVisualizer) window.brainVisualizer.pulseRandomNeuron();
         },
         (err) => {
             alert(`오케스트레이션 에러: ${err.message}`);
@@ -153,6 +166,7 @@ async function clearKnowledgeBase() {
     if (confirm("정말 모든 로컬 RAG 지식베이스 문서를 삭제하시겠습니까?")) {
         await window.apiClient.clearRAG();
         if (window.ragManager) window.ragManager.refreshStats();
+        if (window.brainVisualizer) window.brainVisualizer.loadGraphData();
     }
 }
 
@@ -211,5 +225,5 @@ function exportToDataset() {
 // 시작 시 초기화
 window.addEventListener('DOMContentLoaded', () => {
     checkServerHealth();
-    setInterval(checkServerHealth, 15000); // 15초마다 헬스체크 갱신
+    setInterval(checkServerHealth, 15000);
 });
